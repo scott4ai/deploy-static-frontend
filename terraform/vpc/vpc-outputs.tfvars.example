@@ -1,0 +1,13 @@
+# VPC Configuration for App Stack - Example Template
+# For external teams: Copy this file to vpc-outputs.tfvars and customize values
+# The VPC stack will auto-generate this file, but you can create it manually
+
+# VPC Configuration (customize these for your existing VPC)
+vpc_id             = "vpc-xxxxxxxxx"              # Your existing VPC ID
+vpc_cidr_block     = "10.10.0.0/16"              # Your VPC CIDR block
+public_subnet_ids  = ["subnet-xxxxx1", "subnet-xxxxx2"]  # Your public subnet IDs (2+ subnets in different AZs)
+
+# Environment Configuration (should match your setup)
+aws_region    = "us-east-1"                      # Your AWS region
+environment   = "dev"                            # Environment name (dev, stage, prod)
+project_name  = "hitl"                           # Project name for resource naming

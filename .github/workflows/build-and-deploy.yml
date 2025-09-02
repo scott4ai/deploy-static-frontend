@@ -1,0 +1,294 @@
+name: HITL Platform CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'demo-app/**'
+      - 'lambda-backend/**'
+      - 'ami-builder/**'
+      - 'terraform/**'
+      - 'cloudformation/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - stage  
+        - prod
+      build_ami:
+        description: 'Build new golden AMI'
+        required: false
+        default: true
+        type: boolean
+      deploy_infrastructure:
+        description: 'Deploy infrastructure'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: hitl
+  
+jobs:
+  validate:
+    name: Validate Configurations
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: |
+          demo-app/package-lock.json
+          lambda-backend/package-lock.json
+          
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: '1.5.0'
+        
+    - name: Setup Packer
+      uses: hashicorp/setup-packer@main
+      with:
+        version: '1.9.0'
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Validate configurations
+      run: make validate
+      
+  build-lambda:
+    name: Build Lambda Backend
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: lambda-backend/package-lock.json
+        
+    - name: Build Lambda function
+      run: |
+        cd lambda-backend
+        npm ci
+        ./build.sh
+        
+    - name: Upload Lambda artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: lambda-deployment
+        path: lambda-backend/deployment.zip
+        retention-days: 5
+        
+  build-frontend:
+    name: Build React Frontend
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: demo-app/package-lock.json
+        
+    - name: Build frontend
+      run: |
+        cd demo-app
+        npm ci
+        npm run build
+        
+    - name: Upload frontend artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build
+        path: demo-app/build/
+        retention-days: 5
+        
+  build-ami:
+    name: Build Golden AMI
+    runs-on: ubuntu-latest
+    needs: validate
+    if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.build_ami == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Packer
+      uses: hashicorp/setup-packer@main
+      with:
+        version: '1.9.0'
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Build AMI
+      run: |
+        export ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        make build-ami
+        
+    - name: Upload AMI ID
+      uses: actions/upload-artifact@v4
+      with:
+        name: ami-id
+        path: ami-builder/latest-ami-id.txt
+        retention-days: 30
+        
+    - name: Tag AMI with commit info
+      run: |
+        AMI_ID=$(cat ami-builder/latest-ami-id.txt)
+        aws ec2 create-tags \
+          --region ${{ env.AWS_REGION }} \
+          --resources $AMI_ID \
+          --tags \
+            "Key=GitCommit,Value=${{ github.sha }}" \
+            "Key=GitBranch,Value=${{ github.ref_name }}" \
+            "Key=BuildNumber,Value=${{ github.run_number }}" \
+            "Key=Repository,Value=${{ github.repository }}"
+            
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [build-lambda, build-frontend, build-ami]
+    if: ${{ github.event.inputs.deploy_infrastructure == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: '1.5.0'
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Download AMI ID
+      uses: actions/download-artifact@v4
+      with:
+        name: ami-id
+        path: ami-builder/
+        
+    - name: Download Lambda artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: lambda-deployment
+        path: lambda-backend/
+        
+    - name: Update infrastructure configs
+      run: |
+        export ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        make update-ami-id
+        
+    - name: Deploy VPC
+      run: |
+        export ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        make deploy-vpc
+        
+    - name: Deploy Application
+      run: |
+        export ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        make deploy-app
+        
+    - name: Output deployment info
+      run: |
+        cd terraform/app
+        echo "## Deployment Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **Environment**: ${{ github.event.inputs.environment || 'dev' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **AWS Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **AMI ID**: $(cat ../../ami-builder/latest-ami-id.txt)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Load Balancer DNS**: $(terraform output -raw alb_dns_name)" >> $GITHUB_STEP_SUMMARY
+        
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: Run Checkov security scan
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: .
+        framework: terraform,cloudformation
+        output_format: sarif
+        output_file_path: reports/checkov.sarif
+        
+  cleanup:
+    name: Cleanup Resources
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [deploy-infrastructure]
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Cleanup old AMIs
+      run: |
+        # Keep only the last 5 AMIs for each environment
+        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        aws ec2 describe-images \
+          --owners self \
+          --filters "Name=name,Values=hitl-${ENVIRONMENT}-nginx-*" \
+          --query 'Images | sort_by(@, &CreationDate) | [:-5].[ImageId]' \
+          --output text | \
+        while read ami_id; do
+          if [ ! -z "$ami_id" ]; then
+            echo "Deregistering old AMI: $ami_id"
+            aws ec2 deregister-image --image-id "$ami_id" || true
+          fi
+        done

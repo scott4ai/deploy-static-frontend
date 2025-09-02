@@ -1,0 +1,78 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "hitl"
+  },
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "t3.small"
+  },
+  {
+    "ParameterKey": "MinSize",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "MaxSize",
+    "ParameterValue": "4"
+  },
+  {
+    "ParameterKey": "DesiredCapacity",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "CustomAmiId",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "LambdaZipS3Bucket",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "LambdaZipS3Key",
+    "ParameterValue": "lambda-deployment.zip"
+  },
+  {
+    "ParameterKey": "LambdaHandler",
+    "ParameterValue": "index.handler"
+  },
+  {
+    "ParameterKey": "LambdaRuntime",
+    "ParameterValue": "nodejs22.x"
+  },
+  {
+    "ParameterKey": "LambdaTimeout",
+    "ParameterValue": "30"
+  },
+  {
+    "ParameterKey": "LambdaMemory",
+    "ParameterValue": "256"
+  },
+  {
+    "ParameterKey": "DomainName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "SslCertificateArn",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "EnableWaf",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "WafRateLimit",
+    "ParameterValue": "5000"
+  },
+  {
+    "ParameterKey": "EnableDetailedMonitoring",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "LogRetentionDays",
+    "ParameterValue": "90"
+  }
+]

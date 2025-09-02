@@ -1,0 +1,29 @@
+{
+  "name": "hitl-api",
+  "version": "1.0.0",
+  "description": "HITL Backend API Lambda Function",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "package": "npm run build && npm run zip",
+    "zip": "zip -r deployment.zip . -x '*.ts' 'tsconfig.json' 'node_modules/.cache/*'",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "dependencies": {
+    "@types/aws-lambda": "^8.10.130"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^22.0.0"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "hitl",
+    "api",
+    "federal",
+    "infrastructure"
+  ],
+  "author": "HITL Team",
+  "license": "MIT"
+}

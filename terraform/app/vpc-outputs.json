@@ -1,0 +1,104 @@
+{
+  "availability_zones": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "us-east-1a",
+      "us-east-1b"
+    ]
+  },
+  "aws_region": {
+    "sensitive": false,
+    "type": "string",
+    "value": "us-east-1"
+  },
+  "ec2_messages_vpc_endpoint_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "vpce-0ddcae2b34a013742"
+  },
+  "environment": {
+    "sensitive": false,
+    "type": "string",
+    "value": "dev"
+  },
+  "internet_gateway_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "igw-06078d607f051abc3"
+  },
+  "project_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "hitl"
+  },
+  "public_route_table_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "rtb-0b5565b30cd169f00"
+  },
+  "public_subnet_cidrs": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "10.10.1.0/24",
+      "10.10.2.0/24"
+    ]
+  },
+  "public_subnet_ids": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "subnet-01c0e62c8d703d60f",
+      "subnet-01651ca81abe540a3"
+    ]
+  },
+  "s3_vpc_endpoint_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "vpce-056be116bd078a27b"
+  },
+  "ssm_messages_vpc_endpoint_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "vpce-0d44cac81666225af"
+  },
+  "ssm_vpc_endpoint_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "vpce-0a87989f3455482a4"
+  },
+  "vpc_cidr_block": {
+    "sensitive": false,
+    "type": "string",
+    "value": "10.10.0.0/16"
+  },
+  "vpc_endpoints_security_group_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "sg-034d9ca5b9dbce412"
+  },
+  "vpc_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "vpc-0344a0f6632065aea"
+  }
+}
