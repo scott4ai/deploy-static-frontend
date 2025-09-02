@@ -8,8 +8,16 @@
     "ParameterValue": "hitl"
   },
   {
+    "ParameterKey": "VpcStackName",
+    "ParameterValue": "hitl-prod-vpc"
+  },
+  {
+    "ParameterKey": "ImageBuilderStackName",
+    "ParameterValue": "hitl-prod-image-builder"
+  },
+  {
     "ParameterKey": "InstanceType",
-    "ParameterValue": "t3.small"
+    "ParameterValue": "t3.medium"
   },
   {
     "ParameterKey": "MinSize",
@@ -17,23 +25,31 @@
   },
   {
     "ParameterKey": "MaxSize",
-    "ParameterValue": "4"
+    "ParameterValue": "6"
   },
   {
     "ParameterKey": "DesiredCapacity",
-    "ParameterValue": "2"
+    "ParameterValue": "3"
   },
   {
     "ParameterKey": "CustomAmiId",
     "ParameterValue": ""
   },
   {
-    "ParameterKey": "LambdaZipS3Bucket",
+    "ParameterKey": "DomainName",
     "ParameterValue": ""
   },
   {
-    "ParameterKey": "LambdaZipS3Key",
-    "ParameterValue": "lambda-deployment.zip"
+    "ParameterKey": "SslCertificateArn",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "CreateRoute53Records",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "Route53ZoneId",
+    "ParameterValue": ""
   },
   {
     "ParameterKey": "LambdaHandler",
@@ -52,11 +68,11 @@
     "ParameterValue": "256"
   },
   {
-    "ParameterKey": "DomainName",
+    "ParameterKey": "CognitoUserPoolId",
     "ParameterValue": ""
   },
   {
-    "ParameterKey": "SslCertificateArn",
+    "ParameterKey": "CognitoUserPoolClientId",
     "ParameterValue": ""
   },
   {

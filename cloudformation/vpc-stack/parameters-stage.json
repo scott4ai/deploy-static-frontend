@@ -13,11 +13,15 @@
   },
   {
     "ParameterKey": "AvailabilityZones",
-    "ParameterValue": "us-east-1a,us-east-1b,us-east-1c"
+    "ParameterValue": "us-east-1a,us-east-1b"
   },
   {
     "ParameterKey": "PublicSubnetCidrs",
-    "ParameterValue": "10.20.1.0/24,10.20.2.0/24,10.20.3.0/24"
+    "ParameterValue": "10.20.1.0/24,10.20.2.0/24"
+  },
+  {
+    "ParameterKey": "PrivateSubnetCidrs",
+    "ParameterValue": "10.20.3.0/24,10.20.4.0/24"
   },
   {
     "ParameterKey": "EnableDnsHostnames",

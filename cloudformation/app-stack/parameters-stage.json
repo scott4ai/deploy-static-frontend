@@ -8,6 +8,14 @@
     "ParameterValue": "hitl"
   },
   {
+    "ParameterKey": "VpcStackName",
+    "ParameterValue": "hitl-stage-vpc"
+  },
+  {
+    "ParameterKey": "ImageBuilderStackName",
+    "ParameterValue": "hitl-stage-image-builder"
+  },
+  {
     "ParameterKey": "InstanceType",
     "ParameterValue": "t3.small"
   },
@@ -28,12 +36,20 @@
     "ParameterValue": ""
   },
   {
-    "ParameterKey": "LambdaZipS3Bucket",
+    "ParameterKey": "DomainName",
     "ParameterValue": ""
   },
   {
-    "ParameterKey": "LambdaZipS3Key",
-    "ParameterValue": "lambda-deployment.zip"
+    "ParameterKey": "SslCertificateArn",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "CreateRoute53Records",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "Route53ZoneId",
+    "ParameterValue": ""
   },
   {
     "ParameterKey": "LambdaHandler",
@@ -49,14 +65,14 @@
   },
   {
     "ParameterKey": "LambdaMemory",
-    "ParameterValue": "256"
+    "ParameterValue": "128"
   },
   {
-    "ParameterKey": "DomainName",
+    "ParameterKey": "CognitoUserPoolId",
     "ParameterValue": ""
   },
   {
-    "ParameterKey": "SslCertificateArn",
+    "ParameterKey": "CognitoUserPoolClientId",
     "ParameterValue": ""
   },
   {
@@ -73,6 +89,6 @@
   },
   {
     "ParameterKey": "LogRetentionDays",
-    "ParameterValue": "60"
+    "ParameterValue": "30"
   }
 ]

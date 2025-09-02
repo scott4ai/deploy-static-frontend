@@ -9,15 +9,19 @@
   },
   {
     "ParameterKey": "VpcCidr",
-    "ParameterValue": "10.0.0.0/16"
+    "ParameterValue": "10.30.0.0/16"
   },
   {
     "ParameterKey": "AvailabilityZones",
-    "ParameterValue": "us-east-1a,us-east-1b,us-east-1c"
+    "ParameterValue": "us-east-1a,us-east-1b"
   },
   {
     "ParameterKey": "PublicSubnetCidrs",
-    "ParameterValue": "10.0.1.0/24,10.0.2.0/24,10.0.3.0/24"
+    "ParameterValue": "10.30.1.0/24,10.30.2.0/24"
+  },
+  {
+    "ParameterKey": "PrivateSubnetCidrs",
+    "ParameterValue": "10.30.3.0/24,10.30.4.0/24"
   },
   {
     "ParameterKey": "EnableDnsHostnames",

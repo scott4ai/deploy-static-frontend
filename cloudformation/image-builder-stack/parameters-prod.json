@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "hitl"
+  },
+  {
+    "ParameterKey": "VpcStackName",
+    "ParameterValue": "hitl-prod-vpc"
+  }
+]

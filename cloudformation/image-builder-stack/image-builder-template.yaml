@@ -1,0 +1,599 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'HITL Platform - Image Builder Stack - Equivalent to terraform/image-builder'
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name (dev, stage, prod)
+    AllowedValues: [dev, stage, prod]
+    Default: dev
+
+  ProjectName:
+    Type: String
+    Description: Project name for resource naming
+    Default: hitl
+
+  VpcStackName:
+    Type: String
+    Description: Name of the VPC CloudFormation stack
+    Default: hitl-dev-vpc
+
+Resources:
+  # IAM role for Image Builder instances
+  ImageBuilderInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-imagebuilder-instance-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: ImageBuilderCustomPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource:
+                  - !Sub '${FrontendAssetsBucket}'
+                  - !Sub '${FrontendAssetsBucket}/*'
+                  - !Sub '${ImageBuilderLogsBucket}'
+                  - !Sub '${ImageBuilderLogsBucket}/*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Stack
+          Value: image-builder
+
+  # Instance profile
+  ImageBuilderInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${ProjectName}-${Environment}-imagebuilder-instance-profile'
+      Roles:
+        - !Ref ImageBuilderInstanceRole
+
+  # S3 bucket for frontend assets and scripts
+  FrontendAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-frontend-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: delete-old-versions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 1
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Stack
+          Value: image-builder
+
+  # S3 bucket for Image Builder logs
+  ImageBuilderLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-imagebuilder-logs-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Stack
+          Value: image-builder
+
+  # Security group for Image Builder instances
+  ImageBuilderSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-imagebuilder-sg'
+      GroupDescription: Security group for Image Builder instances
+      VpcId:
+        Fn::ImportValue: !Sub '${VpcStackName}-vpc-id'
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS outbound for AWS APIs
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP outbound for package downloads
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-imagebuilder-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Stack
+          Value: image-builder
+
+  # Upload scripts to S3
+  InstallNginxScript:
+    Type: AWS::S3::Object
+    Properties:
+      Bucket: !Ref FrontendAssetsBucket
+      Key: scripts/install-nginx.sh
+      ContentType: text/plain
+      Body: !Sub |
+        #!/bin/bash
+        # Install OpenResty (nginx + Lua) for dynamic headers
+        set -e
+        
+        echo "=== Installing OpenResty ==="
+        
+        # Install OpenResty repository
+        yum install -y epel-release
+        yum install -y wget
+        wget https://openresty.org/package/centos/openresty.repo -O /etc/yum.repos.d/openresty.repo
+        
+        # Install OpenResty
+        yum install -y openresty
+        
+        # Install AWS CLI v2
+        echo "=== Installing AWS CLI v2 ==="
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip -q awscliv2.zip
+        ./aws/install
+        rm -rf awscliv2.zip aws
+        
+        # Install CloudWatch Agent
+        echo "=== Installing CloudWatch Agent ==="
+        yum install -y amazon-cloudwatch-agent
+        
+        # Create directory structure
+        mkdir -p /var/www/hitl
+        mkdir -p /var/log/hitl
+        mkdir -p /usr/local/openresty/nginx/conf/conf.d
+        
+        # Configure OpenResty with Lua for instance metadata
+        cat > /usr/local/openresty/nginx/conf/nginx.conf << 'EOL'
+        worker_processes auto;
+        error_log /var/log/openresty/error.log;
+        pid /run/openresty.pid;
+        
+        events {
+            worker_connections 1024;
+        }
+        
+        http {
+            log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                              '$status $body_bytes_sent "$http_referer" '
+                              '"$http_user_agent" "$http_x_forwarded_for"';
+        
+            access_log  /var/log/openresty/access.log  main;
+        
+            sendfile            on;
+            tcp_nopush          on;
+            tcp_nodelay         on;
+            keepalive_timeout   65;
+            types_hash_max_size 2048;
+        
+            include             /etc/mime.types;
+            default_type        application/octet-stream;
+        
+            gzip on;
+            gzip_vary on;
+            gzip_min_length 1024;
+            gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+        
+            server {
+                listen 80 default_server;
+                listen [::]:80 default_server;
+                server_name _;
+                root /var/www/hitl;
+                index index.html;
+        
+                # Add instance metadata headers using Lua
+                location / {
+                    access_by_lua_block {
+                        -- Get instance metadata
+                        local http = require "resty.http"
+                        local httpc = http.new()
+                        httpc:set_timeout(1000)
+                        
+                        -- Get instance ID
+                        local res_id, err = httpc:request_uri("http://169.254.169.254/latest/meta-data/instance-id", {
+                            method = "GET",
+                            headers = { ["X-aws-ec2-metadata-token-ttl-seconds"] = "21600" }
+                        })
+                        if res_id and res_id.status == 200 then
+                            ngx.header["X-Instance-ID"] = res_id.body
+                        end
+                        
+                        -- Get availability zone
+                        local res_az, err = httpc:request_uri("http://169.254.169.254/latest/meta-data/placement/availability-zone", {
+                            method = "GET",
+                            headers = { ["X-aws-ec2-metadata-token-ttl-seconds"] = "21600" }
+                        })
+                        if res_az and res_az.status == 200 then
+                            ngx.header["X-Availability-Zone"] = res_az.body
+                            ngx.header["X-Region"] = string.sub(res_az.body, 1, -2)
+                        end
+                        
+                        httpc:close()
+                    }
+                    try_files $uri $uri/ /index.html;
+                }
+        
+                # Health check endpoint
+                location /health {
+                    access_log off;
+                    return 200 "healthy\n";
+                    add_header Content-Type text/plain;
+                }
+        
+                # Detailed health check
+                location /health-detailed {
+                    access_log off;
+                    alias /var/www/hitl/health.json;
+                    add_header Content-Type application/json;
+                }
+        
+                # Security headers
+                add_header X-Frame-Options "DENY" always;
+                add_header X-Content-Type-Options "nosniff" always;
+                add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+                add_header X-XSS-Protection "1; mode=block" always;
+            }
+        }
+        EOL
+        
+        # Set proper permissions
+        chown -R nobody:nobody /var/www/hitl
+        chmod -R 755 /var/www/hitl
+        
+        # Enable and start OpenResty
+        systemctl enable openresty
+        systemctl start openresty
+        
+        echo "=== OpenResty installation completed ==="
+
+  SyncFromS3Script:
+    Type: AWS::S3::Object
+    Properties:
+      Bucket: !Ref FrontendAssetsBucket
+      Key: scripts/sync-from-s3.sh
+      ContentType: text/plain
+      Body: !Sub |
+        #!/bin/bash
+        # Sync content from S3 to local web directory
+        set -e
+        
+        REGION="${AWS::Region}"
+        S3_BUCKET="${FrontendAssetsBucket}"
+        WEB_DIR="/var/www/hitl"
+        LOG_FILE="/var/log/hitl/sync.log"
+        TIMESTAMP_FILE="$WEB_DIR/.last-sync"
+        
+        # Create log directory if it doesn't exist
+        mkdir -p /var/log/hitl
+        mkdir -p $WEB_DIR
+        
+        echo "$(date): Starting S3 sync from s3://$S3_BUCKET" >> $LOG_FILE
+        
+        # Sync files from S3 (excluding scripts directory)
+        aws s3 sync s3://$S3_BUCKET/ $WEB_DIR --region $REGION --exclude "scripts/*" --delete >> $LOG_FILE 2>&1
+        
+        # AWS S3 sync has inconsistent behavior with index.html - force copy
+        echo "$(date): Force copying index.html" >> $LOG_FILE
+        aws s3 cp s3://$S3_BUCKET/index.html $WEB_DIR/index.html --region $REGION >> $LOG_FILE 2>&1 || true
+        
+        # Update timestamp
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > $TIMESTAMP_FILE
+        
+        # Set proper permissions
+        chown -R nobody:nobody $WEB_DIR
+        chmod -R 755 $WEB_DIR
+        
+        echo "$(date): S3 sync completed" >> $LOG_FILE
+
+  GenerateHealthScript:
+    Type: AWS::S3::Object
+    Properties:
+      Bucket: !Ref FrontendAssetsBucket
+      Key: scripts/generate-health.sh
+      ContentType: text/plain
+      Body: !Sub |
+        #!/bin/bash
+        # Generate health.json with system information
+        set -e
+        
+        HEALTH_FILE="/var/www/hitl/health.json"
+        TIMESTAMP_FILE="/var/www/hitl/.last-sync"
+        
+        # Get instance metadata
+        INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
+        INSTANCE_TYPE=$(curl -s http://169.254.169.254/latest/meta-data/instance-type 2>/dev/null || echo "unknown")
+        AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone 2>/dev/null || echo "unknown")
+        
+        # Get system information
+        LOAD_AVG=$(uptime | awk -F'load average:' '{ print $2 }' | sed 's/^ *//')
+        MEMORY_USED=$(free | awk 'FNR==2{printf "%.1f", $3/($3+$4)*100}')
+        DISK_USED=$(df / | awk 'FNR==2{print $5}')
+        
+        # Get OpenResty status
+        if systemctl is-active --quiet openresty; then
+            OPENRESTY_STATUS="active"
+            OPENRESTY_UPTIME=$(systemctl show openresty --property=ActiveEnterTimestamp | cut -d= -f2)
+        else
+            OPENRESTY_STATUS="inactive"
+            OPENRESTY_UPTIME="N/A"
+        fi
+        
+        # Get S3 sync information
+        if [ -f "$TIMESTAMP_FILE" ]; then
+            LAST_SYNC=$(cat $TIMESTAMP_FILE)
+            SYNC_AGE=$(python3 -c "
+        from datetime import datetime, timezone
+        import sys
+        try:
+            last_sync = datetime.fromisoformat('$LAST_SYNC'.replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            seconds = int((now - last_sync).total_seconds())
+            print(seconds)
+        except:
+            print(-1)
+        ")
+        else
+            LAST_SYNC="never"
+            SYNC_AGE=-1
+        fi
+        
+        # Generate JSON
+        cat > $HEALTH_FILE << EOF
+        {
+          "status": "healthy",
+          "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+          "instance": {
+            "id": "$INSTANCE_ID",
+            "type": "$INSTANCE_TYPE",
+            "availability_zone": "$AZ"
+          },
+          "services": {
+            "openresty": {
+              "status": "$OPENRESTY_STATUS",
+              "uptime": "$OPENRESTY_UPTIME"
+            },
+            "s3_sync": {
+              "last_sync": "$LAST_SYNC",
+              "seconds_since_last_sync": $SYNC_AGE
+            }
+          },
+          "system": {
+            "load_average": "$LOAD_AVG",
+            "memory_used_percent": $MEMORY_USED,
+            "disk_used": "$DISK_USED"
+          }
+        }
+        EOF
+        
+        chown nobody:nobody $HEALTH_FILE
+
+  # Image Builder component for nginx and security hardening
+  ImageBuilderComponent:
+    Type: AWS::ImageBuilder::Component
+    DependsOn: [InstallNginxScript, SyncFromS3Script, GenerateHealthScript]
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-nginx-security'
+      Description: Install nginx and apply security hardening
+      Platform: Linux
+      Version: 1.0.9
+      Data: !Sub |
+        name: nginx-security-hardening
+        description: Install nginx with security hardening for HITL Platform
+        schemaVersion: 1.0
+        phases:
+          - name: build
+            steps:
+              - name: InstallNginx
+                action: ExecuteBash
+                inputs:
+                  commands:
+                    - yum update -y
+                    - aws s3 cp s3://${FrontendAssetsBucket}/scripts/install-nginx.sh /tmp/ --region ${AWS::Region}
+                    - chmod +x /tmp/install-nginx.sh
+                    - /tmp/install-nginx.sh
+                    - echo 'Downloading and installing scripts from S3...'
+                    - aws s3 cp s3://${FrontendAssetsBucket}/scripts/sync-from-s3.sh /usr/local/bin/ --region ${AWS::Region}
+                    - chmod +x /usr/local/bin/sync-from-s3.sh
+                    - aws s3 cp s3://${FrontendAssetsBucket}/scripts/generate-health.sh /usr/local/bin/ --region ${AWS::Region}
+                    - chmod +x /usr/local/bin/generate-health.sh
+                    - echo 'Running initial health generation...'
+                    - /usr/local/bin/generate-health.sh
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectName
+        ManagedBy: cloudformation
+        Stack: image-builder
+
+  # Infrastructure configuration
+  ImageBuilderInfrastructureConfiguration:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-infrastructure'
+      Description: Infrastructure configuration for HITL golden AMI
+      InstanceProfileName: !Ref ImageBuilderInstanceProfile
+      InstanceTypes: [t3.small]
+      SubnetId:
+        Fn::ImportValue: !Sub '${VpcStackName}-public-subnet-1-id'
+      SecurityGroupIds:
+        - !Ref ImageBuilderSecurityGroup
+      Logging:
+        S3Logs:
+          S3BucketName: !Ref ImageBuilderLogsBucket
+          S3KeyPrefix: image-builder-logs
+      TerminateInstanceOnFailure: true
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectName
+        ManagedBy: cloudformation
+        Stack: image-builder
+
+  # Image recipe
+  ImageBuilderImageRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-recipe'
+      Description: HITL Platform golden AMI recipe
+      ParentImage: !Sub 'arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-2-x86/x.x.x'
+      Version: 1.0.9
+      Components:
+        - ComponentArn: !Ref ImageBuilderComponent
+        - ComponentArn: !Sub 'arn:aws:imagebuilder:${AWS::Region}:aws:component/update-linux/x.x.x'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectName
+        ManagedBy: cloudformation
+        Stack: image-builder
+
+  # Distribution configuration
+  ImageBuilderDistributionConfiguration:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-distribution'
+      Description: Distribution configuration for HITL golden AMI
+      Distributions:
+        - Region: !Ref AWS::Region
+          AmiDistributionConfiguration:
+            Name: !Sub '${ProjectName}-${Environment}-nginx-{{ imagebuilder:buildDate }}'
+            Description: HITL Platform nginx server with security hardening - {{ imagebuilder:buildDate }}
+            AmiTags:
+              Name: !Sub '${ProjectName}-${Environment}-nginx-{{ imagebuilder:buildDate }}'
+              BuildDate: '{{ imagebuilder:buildDate }}'
+              Source: imagebuilder
+              Component: nginx
+              Environment: !Ref Environment
+              Project: !Ref ProjectName
+              ManagedBy: cloudformation
+              Stack: image-builder
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectName
+        ManagedBy: cloudformation
+        Stack: image-builder
+
+  # Image pipeline
+  ImageBuilderImagePipeline:
+    Type: AWS::ImageBuilder::ImagePipeline
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-pipeline'
+      Description: HITL Platform golden AMI pipeline
+      ImageRecipeArn: !Ref ImageBuilderImageRecipe
+      InfrastructureConfigurationArn: !Ref ImageBuilderInfrastructureConfiguration
+      DistributionConfigurationArn: !Ref ImageBuilderDistributionConfiguration
+      Schedule:
+        ScheduleExpression: 'cron(0 6 ? * 1 *)'  # Every Monday at 6 AM UTC
+        PipelineExecutionStartCondition: EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE
+      EnhancedImageMetadataEnabled: true
+      ImageTestsConfiguration:
+        ImageTestsEnabled: true
+        TimeoutMinutes: 60
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectName
+        ManagedBy: cloudformation
+        Stack: image-builder
+
+Outputs:
+  # S3 Buckets
+  FrontendAssetsBucket:
+    Description: S3 bucket for frontend assets and scripts
+    Value: !Ref FrontendAssetsBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-frontend-assets-bucket'
+
+  ImageBuilderLogsBucket:
+    Description: S3 bucket for Image Builder logs
+    Value: !Ref ImageBuilderLogsBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-imagebuilder-logs-bucket'
+
+  # Image Builder Resources
+  ImageBuilderPipelineArn:
+    Description: Image Builder pipeline ARN
+    Value: !Ref ImageBuilderImagePipeline
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-imagebuilder-pipeline-arn'
+
+  ImageBuilderRecipeArn:
+    Description: Image Builder recipe ARN
+    Value: !Ref ImageBuilderImageRecipe
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-imagebuilder-recipe-arn'
+
+  ImageBuilderComponentArn:
+    Description: Image Builder component ARN
+    Value: !Ref ImageBuilderComponent
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-imagebuilder-component-arn'
+
+  # IAM Resources
+  ImageBuilderInstanceRoleArn:
+    Description: Image Builder instance role ARN
+    Value: !GetAtt ImageBuilderInstanceRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-imagebuilder-instance-role-arn'
+
+  ImageBuilderInstanceProfileArn:
+    Description: Image Builder instance profile ARN
+    Value: !GetAtt ImageBuilderInstanceProfile.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-imagebuilder-instance-profile-arn'
+
+  # Security Group
+  ImageBuilderSecurityGroupId:
+    Description: Image Builder security group ID
+    Value: !Ref ImageBuilderSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-imagebuilder-sg-id'

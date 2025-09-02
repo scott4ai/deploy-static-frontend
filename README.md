@@ -2,6 +2,8 @@
 
 A production-ready, FedRAMP High-compliant static frontend deployment solution for federal cloud environments. This project demonstrates secure React application deployment using AWS services without CloudFront, ECR, ECS, or Fargate dependencies.
 
+**Now with both Terraform and CloudFormation deployment options!**
+
 ## 📚 Table of Contents
 
 - [Architecture Overview](#-architecture-overview)
@@ -77,15 +79,21 @@ Layer 6: Monitoring   → CloudWatch, VPC Flow Logs, access logging
 ```bash
 # Required tools and versions
 - AWS CLI v2 (configured with credentials)
-- Terraform >= 1.5.0
 - Node.js >= 22.x
+- Git
+
+# For Terraform deployment:
+- Terraform >= 1.5.0
 - jq (JSON processor)
 - GNU Make
-- Git
+
+# For CloudFormation deployment:
+- Bash shell
 ```
 
 ### 30-Second Deployment (if you know what you're doing)
 
+#### Option A: Using Terraform
 ```bash
 # Clone and deploy everything
 git clone <repository> && cd deploy-static-frontend
@@ -97,7 +105,23 @@ cd ../app && terraform init && terraform apply -auto-approve
 terraform output application_url
 ```
 
+#### Option B: Using CloudFormation
+```bash
+# Clone and deploy everything
+git clone <repository> && cd deploy-static-frontend
+cd demo-app && npm install && npm run build && cd ..
+./cloudformation/deploy.sh -e dev -s all
+# Wait 15-20 minutes for AMI build, then access the URL shown
+```
+
 ### Step-by-Step Deployment
+
+Choose your preferred Infrastructure as Code tool:
+
+- **[Terraform Deployment](#terraform-deployment)** - Original implementation
+- **[CloudFormation Deployment](#cloudformation-deployment)** - AWS native alternative
+
+## Terraform Deployment
 
 #### 1️⃣ Build React Application
 ```bash
@@ -144,7 +168,96 @@ terraform output application_url
 # https://hitl.your-domain.com
 ```
 
+## CloudFormation Deployment
+
+#### 1️⃣ Build React Application
+```bash
+cd demo-app
+npm install
+npm run build  # Creates build/ directory with static files
+cd ..
+```
+
+#### 2️⃣ Deploy All Stacks (Recommended)
+```bash
+# Deploy all three stacks in the correct order
+./cloudformation/deploy.sh -e dev -s all
+
+# The script will:
+# 1. Deploy VPC stack (network foundation)
+# 2. Deploy Image Builder stack (creates S3 buckets and AMI pipeline)
+# 3. Wait for dependencies
+# 4. Deploy Application stack (ALB, ASG, Lambda)
+```
+
+#### 3️⃣ Alternative: Deploy Stacks Individually
+```bash
+# Option to deploy stacks one by one
+
+# Deploy VPC stack first
+./cloudformation/deploy.sh -e dev -s vpc
+
+# Deploy Image Builder stack (requires VPC)
+./cloudformation/deploy.sh -e dev -s image-builder
+# Note: AMI build will start automatically (15-20 min)
+
+# Deploy Application stack (requires VPC and Image Builder)
+./cloudformation/deploy.sh -e dev -s app
+```
+
+#### 4️⃣ Upload React App to S3
+```bash
+# Get the S3 bucket name from stack outputs
+S3_BUCKET=$(aws cloudformation describe-stacks \
+  --stack-name hitl-dev-app \
+  --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' \
+  --output text)
+
+# Upload React build files
+aws s3 sync ./demo-app/build/ s3://$S3_BUCKET/
+```
+
+#### 5️⃣ Access Application
+```bash
+# The deploy script will show the application URL
+# Or retrieve it manually:
+aws cloudformation describe-stacks \
+  --stack-name hitl-dev-app \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApplicationURL`].OutputValue' \
+  --output text
+```
+
+#### CloudFormation Management Commands
+```bash
+# Check stack status
+./cloudformation/deploy.sh -e dev -a status
+
+# Update existing stacks
+./cloudformation/deploy.sh -e dev -a update
+
+# Delete all stacks (WARNING: Destructive)
+./cloudformation/deploy.sh -e dev -a delete -s all
+
+# Deploy to different environments
+./cloudformation/deploy.sh -e stage -s all
+./cloudformation/deploy.sh -e prod -s all
+
+# Get help
+./cloudformation/deploy.sh -h
+```
+
 ## 📋 Deployment Guide
+
+This project now supports both **Terraform** and **CloudFormation** deployments with identical functionality. Choose the tool that best fits your organization's standards and expertise.
+
+### Infrastructure as Code Options
+
+| Tool | Location | Command | Benefits |
+|------|----------|---------|----------|
+| **Terraform** | `terraform/` | `terraform apply` | Multi-cloud, HCL syntax, mature ecosystem |
+| **CloudFormation** | `cloudformation/` | `./deploy.sh` | AWS-native, YAML/JSON, stack management |
+
+Both implementations maintain the same 3-layer architecture with proper separation of concerns.
 
 ### ⚠️ CRITICAL: Deployment Order
 
@@ -154,23 +267,32 @@ terraform output application_url
 2. **Image Builder** → Creates golden AMI (15-20 min)
 3. **Application Stack** → Uses VPC and AMI
 
-### Why Separate Terraform States?
+### Why Separate States/Stacks?
 
-We maintain **3 separate Terraform state files** for:
+We maintain **3 separate state files (Terraform) or stacks (CloudFormation)** for:
 
 1. **Isolation**: VPC changes don't trigger app redeployment
 2. **Team Separation**: Network team owns VPC, app team owns application
 3. **Flexibility**: Can deploy to existing VPC or create new one
-4. **Blast Radius**: Limits impact of terraform destroy
+4. **Blast Radius**: Limits impact of destroy operations
 
+#### Terraform State Files:
 ```
 terraform/vpc/terraform.tfstate         → VPC infrastructure
 terraform/image-builder/terraform.tfstate → AMI builder
 terraform/app/terraform.tfstate         → Application
 ```
 
+#### CloudFormation Stacks:
+```
+hitl-{env}-vpc           → VPC infrastructure stack
+hitl-{env}-image-builder → AMI builder stack
+hitl-{env}-app           → Application stack
+```
+
 ### Environment-Specific Deployments
 
+#### Using Terraform:
 ```bash
 # Development
 ENVIRONMENT=dev make deploy-vpc deploy-app
@@ -182,9 +304,23 @@ ENVIRONMENT=stage make deploy-vpc deploy-app
 ENVIRONMENT=prod make deploy-vpc deploy-app
 ```
 
+#### Using CloudFormation:
+```bash
+# Development
+./cloudformation/deploy.sh -e dev -s all
+
+# Staging
+./cloudformation/deploy.sh -e stage -s all
+
+# Production
+./cloudformation/deploy.sh -e prod -s all
+```
+
 ## 🔧 Infrastructure Components
 
-### VPC Infrastructure (`terraform/vpc/`)
+### VPC Infrastructure 
+**Terraform:** `terraform/vpc/`  
+**CloudFormation:** `cloudformation/vpc-stack/`
 
 | Component | Configuration | Purpose |
 |-----------|--------------|---------|
@@ -195,10 +331,12 @@ ENVIRONMENT=prod make deploy-vpc deploy-app
 | **VPC Endpoints** | S3, SSM, CloudWatch, EC2 | Private AWS API access |
 | **Security Groups** | Least-privilege | Network access control |
 
-### Golden AMI Pipeline (`terraform/image-builder/`)
+### Golden AMI Pipeline
+**Terraform:** `terraform/image-builder/`  
+**CloudFormation:** `cloudformation/image-builder-stack/`
 
 **Fully Automated Build Process:**
-1. `terraform apply` triggers pipeline
+1. `terraform apply` or `cloudformation deploy` triggers pipeline
 2. EC2 Image Builder launches build instance
 3. Installs OpenResty, scripts, security hardening
 4. Creates AMI and cleans up
@@ -213,7 +351,9 @@ ENVIRONMENT=prod make deploy-vpc deploy-app
 - Health check generators
 - Security hardening
 
-### Application Stack (`terraform/app/`)
+### Application Stack
+**Terraform:** `terraform/app/`  
+**CloudFormation:** `cloudformation/app-stack/`
 
 | Component | Configuration | Features |
 |-----------|--------------|----------|
@@ -658,6 +798,7 @@ aws autoscaling describe-instance-refreshes \
 
 ### Infrastructure Tests
 
+#### Terraform:
 ```bash
 # Validate Terraform
 cd terraform/vpc && terraform validate
@@ -666,6 +807,22 @@ cd ../image-builder && terraform validate
 
 # Dry run
 terraform plan -detailed-exitcode
+```
+
+#### CloudFormation:
+```bash
+# Validate templates
+aws cloudformation validate-template \
+  --template-body file://cloudformation/vpc-stack/vpc-template.yaml
+
+aws cloudformation validate-template \
+  --template-body file://cloudformation/image-builder-stack/image-builder-template.yaml
+
+aws cloudformation validate-template \
+  --template-body file://cloudformation/app-stack/app-template.yaml
+
+# Check stack status
+./cloudformation/deploy.sh -e dev -a status
 ```
 
 ### Application Tests
@@ -739,7 +896,7 @@ deploy-static-frontend/
 │   ├── package.json
 │   └── build.sh                # Build script
 │
-├── terraform/                   # Infrastructure as Code
+├── terraform/                   # Terraform Infrastructure as Code
 │   ├── vpc/                    # Network layer (State 1)
 │   │   ├── main.tf
 │   │   ├── variables.tf
@@ -763,18 +920,37 @@ deploy-static-frontend/
 │       ├── waf.tf             # Security rules
 │       └── terraform.tfstate
 │
+├── cloudformation/             # CloudFormation Infrastructure as Code
+│   ├── deploy.sh              # Deployment script for all stacks
+│   ├── vpc-stack/             # Network layer (Stack 1)
+│   │   ├── vpc-template.yaml
+│   │   ├── parameters-dev.json
+│   │   ├── parameters-stage.json
+│   │   └── parameters-prod.json
+│   │
+│   ├── image-builder-stack/   # AMI pipeline (Stack 2)
+│   │   ├── image-builder-template.yaml
+│   │   ├── parameters-dev.json
+│   │   ├── parameters-stage.json
+│   │   └── parameters-prod.json
+│   │
+│   └── app-stack/             # Application layer (Stack 3)
+│       ├── app-template.yaml
+│       ├── parameters-dev.json
+│       ├── parameters-stage.json
+│       └── parameters-prod.json
+│
 ├── scripts/                    # Deployment scripts
 │   ├── install-nginx.sh       # OpenResty installation
 │   ├── sync-from-s3.sh       # S3 content sync with index.html fix
 │   └── generate-health.sh    # Health endpoint generator
 │
-├── environments/              # Environment configs
+├── environments/              # Terraform environment configs
 │   ├── dev.tfvars
 │   ├── vpc-dev.tfvars
 │   ├── stage.tfvars
 │   └── prod.tfvars
 │
-├── cloudformation/            # CloudFormation alternative (optional)
 ├── public/                    # Static assets
 ├── .github/                   # GitHub Actions workflows
 ├── Makefile                   # Build automation
@@ -805,7 +981,13 @@ deploy-static-frontend/
 ### Q: Why can't I use HTTPS with the ALB DNS name?
 **A:** AWS Certificate Manager (ACM) cannot issue certificates for AWS-owned domains (*.elb.amazonaws.com). You must use a custom domain or accept HTTP-only access.
 
-### Q: Why do we need 3 separate Terraform state files?
+### Q: Should I use Terraform or CloudFormation?
+**A:** Both options are fully supported and provide identical functionality:
+- **Use Terraform** if you prefer multi-cloud support, HCL syntax, or already use Terraform
+- **Use CloudFormation** if you prefer AWS-native tools, YAML/JSON templates, or want tighter AWS integration
+- Both maintain the same 3-layer architecture with proper separation of concerns
+
+### Q: Why do we need 3 separate Terraform state files / CloudFormation stacks?
 **A:** Separation provides isolation, reduces blast radius, and allows different teams to manage different layers. VPC rarely changes, while the app layer changes frequently.
 
 ### Q: Why use VPC Endpoints instead of NAT Gateway for private subnets?

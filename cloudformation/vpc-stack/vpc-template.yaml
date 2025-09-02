@@ -1,14 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'HITL - VPC Infrastructure Stack'
+Description: 'HITL Platform - VPC Infrastructure Stack - Equivalent to terraform/vpc'
 
 Parameters:
   Environment:
     Type: String
     Description: Environment name (dev, stage, prod)
-    AllowedValues:
-      - dev
-      - stage
-      - prod
+    AllowedValues: [dev, stage, prod]
     Default: dev
 
   ProjectName:
@@ -32,52 +29,43 @@ Parameters:
     Description: CIDR blocks for public subnets
     Default: 10.10.1.0/24,10.10.2.0/24
 
+  PrivateSubnetCidrs:
+    Type: CommaDelimitedList
+    Description: CIDR blocks for private subnets
+    Default: 10.10.3.0/24,10.10.4.0/24
+
   EnableDnsHostnames:
     Type: String
     Description: Enable DNS hostnames in the VPC
-    Default: true
-    AllowedValues:
-      - true
-      - false
+    Default: 'true'
+    AllowedValues: ['true', 'false']
 
   EnableDnsSupport:
     Type: String
     Description: Enable DNS support in the VPC
-    Default: true
-    AllowedValues:
-      - true
-      - false
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  CommonTags:
+    Type: String
+    Description: Additional common tags (JSON format)
+    Default: '{}'
 
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
           default: Environment Configuration
-        Parameters:
-          - Environment
-          - ProjectName
+        Parameters: [Environment, ProjectName]
       - Label:
           default: Network Configuration
-        Parameters:
-          - VpcCidr
-          - AvailabilityZones
-          - PublicSubnetCidrs
+        Parameters: [VpcCidr, AvailabilityZones, PublicSubnetCidrs, PrivateSubnetCidrs]
       - Label:
           default: DNS Configuration
-        Parameters:
-          - EnableDnsHostnames
-          - EnableDnsSupport
-    ParameterLabels:
-      Environment:
-        default: Environment
-      ProjectName:
-        default: Project Name
-      VpcCidr:
-        default: VPC CIDR Block
-      AvailabilityZones:
-        default: Availability Zones
-      PublicSubnetCidrs:
-        default: Public Subnet CIDR Blocks
+        Parameters: [EnableDnsHostnames, EnableDnsSupport]
+      - Label:
+          default: Tagging
+        Parameters: [CommonTags]
 
 Resources:
   # VPC
@@ -96,8 +84,6 @@ Resources:
           Value: !Ref ProjectName
         - Key: ManagedBy
           Value: cloudformation
-        - Key: Stack
-          Value: vpc
 
   # Internet Gateway
   InternetGateway:
@@ -110,6 +96,8 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -117,7 +105,7 @@ Resources:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-  # Public Subnet 1
+  # Public Subnets
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -127,15 +115,16 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-public-${AWS::Region}a'
+          Value: !Sub '${ProjectName}-${Environment}-public-${!Select [0, !Ref AvailabilityZones]}'
         - Key: Type
           Value: public
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
-  # Public Subnet 2
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
@@ -145,32 +134,54 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-public-${AWS::Region}b'
+          Value: !Sub '${ProjectName}-${Environment}-public-${!Select [1, !Ref AvailabilityZones]}'
         - Key: Type
           Value: public
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
-  # Public Subnet 3 (Conditional - only if 3rd AZ is provided)
-  PublicSubnet3:
+  # Private Subnets
+  PrivateSubnet1:
     Type: AWS::EC2::Subnet
-    Condition: Has3AZs
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: !Select [2, !Ref PublicSubnetCidrs]
-      AvailabilityZone: !Select [2, !Ref AvailabilityZones]
-      MapPublicIpOnLaunch: true
+      CidrBlock: !Select [0, !Ref PrivateSubnetCidrs]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-public-${AWS::Region}c'
+          Value: !Sub '${ProjectName}-${Environment}-private-${!Select [0, !Ref AvailabilityZones]}'
         - Key: Type
-          Value: public
+          Value: private
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [1, !Ref PrivateSubnetCidrs]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-${!Select [1, !Ref AvailabilityZones]}'
+        - Key: Type
+          Value: private
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
   # Public Route Table
   PublicRouteTable:
@@ -184,6 +195,8 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
   # Route to Internet Gateway
   PublicRoute:
@@ -207,32 +220,53 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
-  PublicSubnetRouteTableAssociation3:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: Has3AZs
+  # Private Route Table (no internet gateway)
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
     Properties:
-      SubnetId: !Ref PublicSubnet3
-      RouteTableId: !Ref PublicRouteTable
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-rt'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
-  # S3 VPC Endpoint
+  # Associate Route Table with Private Subnets
+  PrivateSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # S3 VPC Endpoint (Gateway type for both public and private subnets)
   S3Endpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
       VpcId: !Ref VPC
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
       RouteTableIds:
         - !Ref PublicRouteTable
-      VpcEndpointType: Gateway
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal: '*'
-            Action:
-              - s3:GetObject
-              - s3:PutObject
-              - s3:ListBucket
-            Resource: '*'
+        - !Ref PrivateRouteTable
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-s3-endpoint'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
   # Security Group for VPC Endpoints
   VPCEndpointsSecurityGroup:
@@ -258,8 +292,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
-  # Systems Manager VPC Endpoints
+  # Systems Manager VPC Endpoints (for Session Manager)
   SSMEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
@@ -268,11 +304,19 @@ Resources:
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
       SubnetIds:
-        - !Ref PublicSubnet1
-        - !Ref PublicSubnet2
-        - !If [Has3AZs, !Ref PublicSubnet3, !Ref AWS::NoValue]
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
       SecurityGroupIds:
         - !Ref VPCEndpointsSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ssm-endpoint'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
   SSMMessagesEndpoint:
     Type: AWS::EC2::VPCEndpoint
@@ -282,11 +326,19 @@ Resources:
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
       SubnetIds:
-        - !Ref PublicSubnet1
-        - !Ref PublicSubnet2
-        - !If [Has3AZs, !Ref PublicSubnet3, !Ref AWS::NoValue]
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
       SecurityGroupIds:
         - !Ref VPCEndpointsSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ssm-messages-endpoint'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
   EC2MessagesEndpoint:
     Type: AWS::EC2::VPCEndpoint
@@ -296,16 +348,68 @@ Resources:
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
       SubnetIds:
-        - !Ref PublicSubnet1
-        - !Ref PublicSubnet2
-        - !If [Has3AZs, !Ref PublicSubnet3, !Ref AWS::NoValue]
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
       SecurityGroupIds:
         - !Ref VPCEndpointsSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ec2-messages-endpoint'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
-Conditions:
-  Has3AZs: !Not [!Equals [!Select [2, !Ref AvailabilityZones], '']]
+  # CloudWatch Logs VPC Endpoint (for Lambda)
+  CloudWatchLogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointsSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-logs-endpoint'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
+
+  # CloudWatch Monitoring VPC Endpoint (for Lambda metrics)
+  CloudWatchMonitoringEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.monitoring'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointsSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-monitoring-endpoint'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation
 
 Outputs:
+  # VPC Information
   VpcId:
     Description: VPC ID
     Value: !Ref VPC
@@ -316,20 +420,12 @@ Outputs:
     Description: VPC CIDR block
     Value: !GetAtt VPC.CidrBlock
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-vpc-cidr'
+      Name: !Sub '${ProjectName}-${Environment}-vpc-cidr-block'
 
-  InternetGatewayId:
-    Description: Internet Gateway ID
-    Value: !Ref InternetGateway
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-igw-id'
-
+  # Public Subnet Information
   PublicSubnetIds:
     Description: List of public subnet IDs
-    Value: !If
-      - Has3AZs
-      - !Sub '${PublicSubnet1},${PublicSubnet2},${PublicSubnet3}'
-      - !Sub '${PublicSubnet1},${PublicSubnet2}'
+    Value: !Sub '${PublicSubnet1},${PublicSubnet2}'
     Export:
       Name: !Sub '${ProjectName}-${Environment}-public-subnet-ids'
 
@@ -345,55 +441,26 @@ Outputs:
     Export:
       Name: !Sub '${ProjectName}-${Environment}-public-subnet-2-id'
 
-  PublicSubnet3Id:
-    Description: Public Subnet 3 ID
-    Condition: Has3AZs
-    Value: !Ref PublicSubnet3
+  # Private Subnet Information
+  PrivateSubnetIds:
+    Description: List of private subnet IDs
+    Value: !Sub '${PrivateSubnet1},${PrivateSubnet2}'
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-public-subnet-3-id'
+      Name: !Sub '${ProjectName}-${Environment}-private-subnet-ids'
 
-  AvailabilityZones:
-    Description: List of availability zones
-    Value: !Join [',', !Ref AvailabilityZones]
+  PrivateSubnet1Id:
+    Description: Private Subnet 1 ID
+    Value: !Ref PrivateSubnet1
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-availability-zones'
+      Name: !Sub '${ProjectName}-${Environment}-private-subnet-1-id'
 
-  PublicRouteTableId:
-    Description: Public route table ID
-    Value: !Ref PublicRouteTable
+  PrivateSubnet2Id:
+    Description: Private Subnet 2 ID
+    Value: !Ref PrivateSubnet2
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-public-route-table-id'
+      Name: !Sub '${ProjectName}-${Environment}-private-subnet-2-id'
 
-  S3EndpointId:
-    Description: S3 VPC endpoint ID
-    Value: !Ref S3Endpoint
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-s3-endpoint-id'
-
-  VPCEndpointsSecurityGroupId:
-    Description: VPC endpoints security group ID
-    Value: !Ref VPCEndpointsSecurityGroup
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-vpc-endpoints-sg-id'
-
-  SSMEndpointId:
-    Description: SSM VPC endpoint ID
-    Value: !Ref SSMEndpoint
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-ssm-endpoint-id'
-
-  SSMMessagesEndpointId:
-    Description: SSM Messages VPC endpoint ID
-    Value: !Ref SSMMessagesEndpoint
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-ssm-messages-endpoint-id'
-
-  EC2MessagesEndpointId:
-    Description: EC2 Messages VPC endpoint ID
-    Value: !Ref EC2MessagesEndpoint
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-ec2-messages-endpoint-id'
-
+  # Environment Information
   Environment:
     Description: Environment name
     Value: !Ref Environment
@@ -411,3 +478,28 @@ Outputs:
     Value: !Ref AWS::Region
     Export:
       Name: !Sub '${ProjectName}-${Environment}-aws-region'
+
+  # Other Resources
+  InternetGatewayId:
+    Description: Internet Gateway ID
+    Value: !Ref InternetGateway
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-igw-id'
+
+  PublicRouteTableId:
+    Description: Public route table ID
+    Value: !Ref PublicRouteTable
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-public-route-table-id'
+
+  PrivateRouteTableId:
+    Description: Private route table ID
+    Value: !Ref PrivateRouteTable
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-private-route-table-id'
+
+  VPCEndpointsSecurityGroupId:
+    Description: VPC endpoints security group ID
+    Value: !Ref VPCEndpointsSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-vpc-endpoints-sg-id'

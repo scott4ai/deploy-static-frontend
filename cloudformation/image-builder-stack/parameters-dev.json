@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "hitl"
+  },
+  {
+    "ParameterKey": "VpcStackName",
+    "ParameterValue": "hitl-dev-vpc"
+  }
+]
