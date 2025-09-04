@@ -46,9 +46,9 @@ check-deps: ## Check for required dependencies
 build: check-deps build-lambda build-frontend ## Build application components (lambda, frontend)
 	@echo "$(GREEN)Application build completed successfully!$(NC)"
 
-deploy-image-builder-pipeline: deploy-vpc ## Deploy EC2 Image Builder pipeline infrastructure (requires VPC)
+deploy-ami-pipeline: deploy-vpc ## Deploy EC2 Image Builder pipeline infrastructure (requires VPC)
 	@echo "$(GREEN)Setting up Image Builder pipeline...$(NC)"
-	@cd terraform/image-builder && \
+	@cd terraform/ami && \
 		terraform init && \
 		VPC_ID=$$(cd ../vpc && terraform output -raw vpc_id) && \
 		SUBNET_ID=$$(cd ../vpc && terraform output -json public_subnet_ids | jq -r '.[0]') && \
@@ -57,7 +57,7 @@ deploy-image-builder-pipeline: deploy-vpc ## Deploy EC2 Image Builder pipeline i
 
 build-ami: ## Trigger Image Builder pipeline to create AMI
 	@echo "$(GREEN)Triggering AMI build...$(NC)"
-	@PIPELINE_ARN=$$(cd terraform/image-builder && terraform output -raw image_pipeline_arn) && \
+	@PIPELINE_ARN=$$(cd terraform/ami && terraform output -raw image_pipeline_arn) && \
 		aws imagebuilder start-image-pipeline-execution --image-pipeline-arn "$$PIPELINE_ARN" --region $(AWS_REGION)
 	@echo "$(GREEN)AMI build triggered! Check AWS Console > EC2 Image Builder for progress.$(NC)"
 
@@ -223,7 +223,7 @@ pipeline-terraform: ## Run complete Terraform pipeline (build -> deploy VPC -> d
 	@echo "$(GREEN)Running complete Terraform pipeline...$(NC)"
 	@$(MAKE) build
 	@$(MAKE) deploy-vpc
-	@$(MAKE) deploy-image-builder-pipeline
+	@$(MAKE) deploy-ami-pipeline
 	@$(MAKE) build-ami
 	@$(MAKE) deploy-app
 	@$(MAKE) status

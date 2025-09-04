@@ -41,9 +41,12 @@ S3_SYNC_STATUS="unknown"
 LAST_SYNC=""
 LAST_SYNC_SECONDS_AGO=""
 
+# Use standard nginx document root
+WEB_DIR="/var/www/html"
+
 # Check for .last-sync timestamp file
-if [ -f /var/www/hitl/.last-sync ]; then
-    LAST_SYNC=$(cat /var/www/hitl/.last-sync)
+if [ -f "$WEB_DIR/.last-sync" ]; then
+    LAST_SYNC=$(cat "$WEB_DIR/.last-sync")
     if [ -n "$LAST_SYNC" ]; then
         S3_SYNC_STATUS="active"
         # Calculate seconds since last sync
@@ -62,7 +65,7 @@ DISK_USED=$(df -h / | awk 'NR==2{printf "%s", $5}')
 UPTIME_SECONDS=$(cat /proc/uptime | cut -d' ' -f1 | cut -d'.' -f1)
 
 # Create health endpoint JSON for /health-detailed
-cat > /var/www/hitl/health-detailed << JSON_EOF
+cat > "$WEB_DIR/health-detailed" << JSON_EOF
 {
   "status": "healthy",
   "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
@@ -102,16 +105,16 @@ cat > /var/www/hitl/health-detailed << JSON_EOF
 JSON_EOF
 
 # Set proper permissions
-chown nobody:nobody /var/www/hitl/health-detailed 2>/dev/null || chown nginx:nginx /var/www/hitl/health-detailed 2>/dev/null || chown apache:apache /var/www/hitl/health-detailed 2>/dev/null || true
+chown nobody:nobody "$WEB_DIR/health-detailed" 2>/dev/null || chown nginx:nginx "$WEB_DIR/health-detailed" 2>/dev/null || chown apache:apache "$WEB_DIR/health-detailed" 2>/dev/null || true
 
 # The simple /health endpoint is handled by nginx location block
 # No need to create a file for it
 
 # Create the initial health endpoint
 echo "Generating initial health endpoint..."
-mkdir -p /var/www/hitl
+mkdir -p "$WEB_DIR"
 
 # Set proper permissions
-chown nobody:nobody /var/www/hitl/health-detailed 2>/dev/null || chown nginx:nginx /var/www/hitl/health-detailed 2>/dev/null || chown apache:apache /var/www/hitl/health-detailed 2>/dev/null || true
+chown nobody:nobody "$WEB_DIR/health-detailed" 2>/dev/null || chown nginx:nginx "$WEB_DIR/health-detailed" 2>/dev/null || chown apache:apache "$WEB_DIR/health-detailed" 2>/dev/null || true
 
 echo "Health endpoint generation complete!"

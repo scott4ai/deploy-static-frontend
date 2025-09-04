@@ -1,10 +1,10 @@
 output "image_pipeline_arn" {
-  description = "ARN of the Image Builder pipeline"
+  description = "ARN of the AMI build pipeline"
   value       = aws_imagebuilder_image_pipeline.main.arn
 }
 
 output "image_recipe_arn" {
-  description = "ARN of the Image Builder recipe"
+  description = "ARN of the AMI build recipe"
   value       = aws_imagebuilder_image_recipe.main.arn
 }
 
@@ -20,12 +20,12 @@ output "latest_ami_command" {
 
 output "ami_build_status_command" {
   description = "AWS CLI command to check AMI build status"
-  value = "aws imagebuilder list-images --filter name=hitl-dev-recipe --query 'imageList[0].state.status' --output text"
+  value = "aws imagebuilder list-images --filter name=${local.project_name}-${local.environment}-recipe --query 'imageList[0].state.status' --output text"
 }
 
 output "build_triggered" {
   description = "Indicates that AMI build has been automatically triggered"
-  value = "AMI build automatically started via Image Builder pipeline"
+  value = "AMI build automatically started via AMI build pipeline"
   depends_on = [null_resource.trigger_ami_build]
 }
 

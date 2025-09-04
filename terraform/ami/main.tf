@@ -1,4 +1,4 @@
-# EC2 Image Builder for Golden AMI Creation
+# EC2 AMI Builder for Golden AMI Creation
 # AWS native service - much better than Packer for FedRAMP environments
 
 terraform {
@@ -32,13 +32,13 @@ locals {
     Environment = local.environment
     Project     = local.project_name
     ManagedBy   = "terraform"
-    Stack       = "image-builder"
+    Stack       = "ami"
   }
 }
 
-# IAM role for Image Builder
-resource "aws_iam_role" "image_builder_instance_role" {
-  name = "${local.project_name}-${local.environment}-imagebuilder-instance-role"
+# IAM role for AMI Builder
+resource "aws_iam_role" "ami_instance_role" {
+  name = "${local.project_name}-${local.environment}-ami-instance-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -56,21 +56,21 @@ resource "aws_iam_role" "image_builder_instance_role" {
   tags = local.common_tags
 }
 
-# Attach AWS managed policies for Image Builder
-resource "aws_iam_role_policy_attachment" "image_builder_instance_profile" {
+# Attach AWS managed policies for AMI Builder
+resource "aws_iam_role_policy_attachment" "ami_instance_profile" {
   policy_arn = "arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder"
-  role       = aws_iam_role.image_builder_instance_role.name
+  role       = aws_iam_role.ami_instance_role.name
 }
 
 resource "aws_iam_role_policy_attachment" "ssm_managed_instance_core" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-  role       = aws_iam_role.image_builder_instance_role.name
+  role       = aws_iam_role.ami_instance_role.name
 }
 
 # Custom policy for additional permissions
-resource "aws_iam_role_policy" "image_builder_custom" {
-  name = "${local.project_name}-${local.environment}-imagebuilder-custom"
-  role = aws_iam_role.image_builder_instance_role.id
+resource "aws_iam_role_policy" "ami_custom" {
+  name = "${local.project_name}-${local.environment}-ami-custom"
+  role = aws_iam_role.ami_instance_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -86,8 +86,8 @@ resource "aws_iam_role_policy" "image_builder_custom" {
         Resource = [
           "arn:aws:s3:::${local.project_name}-${local.environment}-*",
           "arn:aws:s3:::${local.project_name}-${local.environment}-*/*",
-          "${aws_s3_bucket.image_builder_logs.arn}",
-          "${aws_s3_bucket.image_builder_logs.arn}/*"
+          "${aws_s3_bucket.ami_logs.arn}",
+          "${aws_s3_bucket.ami_logs.arn}/*"
         ]
       },
       {
@@ -104,9 +104,9 @@ resource "aws_iam_role_policy" "image_builder_custom" {
 }
 
 # Instance profile
-resource "aws_iam_instance_profile" "image_builder" {
-  name = "${local.project_name}-${local.environment}-imagebuilder-instance-profile"
-  role = aws_iam_role.image_builder_instance_role.name
+resource "aws_iam_instance_profile" "ami" {
+  name = "${local.project_name}-${local.environment}-ami-instance-profile"
+  role = aws_iam_role.ami_instance_role.name
 
   tags = local.common_tags
 }
@@ -168,20 +168,20 @@ resource "aws_imagebuilder_component" "nginx_security" {
 resource "aws_imagebuilder_infrastructure_configuration" "main" {
   name          = "${local.project_name}-${local.environment}-infrastructure"
   description   = "Infrastructure configuration for HITL golden AMI"
-  instance_profile_name = aws_iam_instance_profile.image_builder.name
+  instance_profile_name = aws_iam_instance_profile.ami.name
   instance_types = ["t3.small"]
 
   # Use public subnet for build (simpler networking)
   subnet_id = local.public_subnet_id
 
   # Security group for build instance
-  security_group_ids = [aws_security_group.image_builder.id]
+  security_group_ids = [aws_security_group.ami.id]
 
   # Enable logging
   logging {
     s3_logs {
-      s3_bucket_name = aws_s3_bucket.image_builder_logs.bucket
-      s3_key_prefix  = "image-builder-logs"
+      s3_bucket_name = aws_s3_bucket.ami_logs.bucket
+      s3_key_prefix  = "ami-logs"
     }
   }
 
@@ -191,11 +191,11 @@ resource "aws_imagebuilder_infrastructure_configuration" "main" {
   tags = local.common_tags
 }
 
-# Security group for Image Builder instances
-resource "aws_security_group" "image_builder" {
-  name_prefix = "${local.project_name}-${local.environment}-imagebuilder-"
+# Security group for AMI build instances
+resource "aws_security_group" "ami" {
+  name_prefix = "${local.project_name}-${local.environment}-ami-"
   vpc_id      = local.vpc_id
-  description = "Security group for Image Builder instances"
+  description = "Security group for AMI build instances"
 
   # Outbound for package downloads and AWS API calls
   egress {
@@ -213,13 +213,13 @@ resource "aws_security_group" "image_builder" {
   }
 
   tags = merge(local.common_tags, {
-    Name = "${local.project_name}-${local.environment}-imagebuilder-sg"
+    Name = "${local.project_name}-${local.environment}-ami-sg"
   })
 }
 
 # S3 bucket for frontend assets and scripts
 resource "aws_s3_bucket" "frontend_assets" {
-  bucket_prefix = "${local.project_name}-${local.environment}-frontend-"
+  bucket = "${local.project_name}-${local.environment}-frontend"
   
   tags = local.common_tags
   
@@ -239,27 +239,22 @@ resource "aws_s3_bucket_public_access_block" "frontend_assets" {
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_versioning" "frontend_assets" {
-  bucket = aws_s3_bucket.frontend_assets.id
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
+# Versioning disabled for simpler bucket deletion
 
-# Lifecycle policy to automatically clean up old versions
+# Lifecycle policy to automatically clean up old files
 resource "aws_s3_bucket_lifecycle_configuration" "frontend_assets" {
   bucket = aws_s3_bucket.frontend_assets.id
 
   rule {
-    id     = "delete_old_versions"
+    id     = "delete_old_files"
     status = "Enabled"
 
     filter {
       prefix = ""  # Apply to all objects
     }
 
-    noncurrent_version_expiration {
-      noncurrent_days = 1  # Delete old versions after 1 day
+    expiration {
+      days = 30  # Delete files after 30 days
     }
     
     abort_incomplete_multipart_upload {
@@ -278,7 +273,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "frontend_assets" 
   }
 }
 
-# Upload scripts to S3 for Image Builder to use
+# Upload scripts to S3 for AMI build to use
 resource "aws_s3_object" "install_nginx_script" {
   bucket = aws_s3_bucket.frontend_assets.bucket
   key    = "scripts/install-nginx.sh"
@@ -306,9 +301,9 @@ resource "aws_s3_object" "generate_health_script" {
   tags = local.common_tags
 }
 
-# S3 bucket for Image Builder logs
-resource "aws_s3_bucket" "image_builder_logs" {
-  bucket_prefix = "${local.project_name}-${local.environment}-imagebuilder-logs-"
+# S3 bucket for AMI build logs
+resource "aws_s3_bucket" "ami_logs" {
+  bucket = "${local.project_name}-${local.environment}-ami-logs"
   
   tags = local.common_tags
   
@@ -319,8 +314,8 @@ resource "aws_s3_bucket" "image_builder_logs" {
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "image_builder_logs" {
-  bucket = aws_s3_bucket.image_builder_logs.id
+resource "aws_s3_bucket_public_access_block" "ami_logs" {
+  bucket = aws_s3_bucket.ami_logs.id
 
   block_public_acls       = true
   block_public_policy     = true

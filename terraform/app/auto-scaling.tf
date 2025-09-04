@@ -50,7 +50,7 @@ resource "aws_launch_template" "web" {
   }
 
   depends_on = [
-    data.terraform_remote_state.image_builder
+    data.terraform_remote_state.ami
   ]
 }
 

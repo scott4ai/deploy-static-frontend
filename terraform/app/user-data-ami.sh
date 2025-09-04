@@ -119,6 +119,6 @@ echo "EC2 instance configuration completed successfully!"
 echo "Services status:"
 systemctl status openresty --no-pager -l || true
 echo "S3 sync status:"
-ls -la /var/www/hitl/ || true
+ls -la /var/www/html/ || true
 
 echo "User data script completed at $(date)"

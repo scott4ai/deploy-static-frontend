@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'HITL Platform - Application Stack - Equivalent to terraform/app'
+Description: 'HITL Platform - Application Stack - Working Version'
 
 Parameters:
   Environment:
@@ -11,24 +11,23 @@ Parameters:
   ProjectName:
     Type: String
     Description: Project name for resource naming
-    Default: hitl
+    Default: hitl-cf
 
   VpcStackName:
     Type: String
     Description: Name of the VPC CloudFormation stack
-    Default: hitl-dev-vpc
+    Default: hitl-cf-dev-vpc
 
-  ImageBuilderStackName:
+  AmiStackName:
     Type: String
-    Description: Name of the Image Builder CloudFormation stack
-    Default: hitl-dev-image-builder
+    Description: Name of the AMI CloudFormation stack
+    Default: hitl-cf-dev-ami
 
-  # EC2 Configuration
   InstanceType:
     Type: String
     Description: EC2 instance type
     Default: t3.small
-    AllowedValues: [t3.micro, t3.small, t3.medium, t3.large, t3.xlarge]
+    AllowedValues: [t3.micro, t3.small, t3.medium, t3.large]
 
   MinSize:
     Type: Number
@@ -51,188 +50,46 @@ Parameters:
     MinValue: 1
     MaxValue: 10
 
-  CustomAmiId:
-    Type: String
-    Description: Custom AMI ID (golden AMI from image builder)
-    Default: ''
-
-  # Application Configuration
   DomainName:
     Type: String
-    Description: Domain name for SSL certificate (optional)
-    Default: ''
-
-  SslCertificateArn:
-    Type: String
-    Description: SSL certificate ARN (optional, will create if not provided)
-    Default: ''
-
-  CreateRoute53Records:
-    Type: String
-    Description: Create Route 53 DNS records for ACM certificate validation
-    Default: 'false'
-    AllowedValues: ['true', 'false']
+    Description: Domain name for SSL certificate (optional, leave empty to skip HTTPS)
+    Default: ""
 
   Route53ZoneId:
     Type: String
-    Description: Route 53 hosted zone ID for the domain
-    Default: ''
+    Description: Route 53 hosted zone ID for the domain (optional)
+    Default: ""
 
-  # Lambda Configuration
-  LambdaZipPath:
+  CreateRoute53Records:
     Type: String
-    Description: S3 key path to Lambda deployment zip file
-    Default: lambda-backend/deployment.zip
+    Description: Whether to create Route53 records
+    Default: "true"
+    AllowedValues: ["true", "false"]
 
-  LambdaHandler:
-    Type: String
-    Description: Lambda function handler
-    Default: index.handler
-
-  LambdaRuntime:
-    Type: String
-    Description: Lambda runtime
-    Default: nodejs22.x
-    AllowedValues: [nodejs18.x, nodejs20.x, nodejs22.x, python3.9, python3.10, python3.11]
-
-  LambdaTimeout:
-    Type: Number
-    Description: Lambda timeout in seconds
-    Default: 30
-    MinValue: 1
-    MaxValue: 900
-
-  LambdaMemory:
-    Type: Number
-    Description: Lambda memory in MB
-    Default: 128
-    MinValue: 128
-    MaxValue: 10240
-
-  # Cognito Configuration
-  CognitoUserPoolId:
-    Type: String
-    Description: Cognito User Pool ID for Lambda authentication
-    Default: ''
-
-  CognitoUserPoolClientId:
-    Type: String
-    Description: Cognito User Pool Client ID for Lambda authentication
-    Default: ''
-
-  # WAF Configuration
   EnableWaf:
     Type: String
-    Description: Enable AWS WAF
-    Default: 'true'
-    AllowedValues: ['true', 'false']
+    Description: Whether to enable WAF protection
+    Default: "true"
+    AllowedValues: ["true", "false"]
 
-  WafRateLimit:
-    Type: Number
-    Description: WAF rate limit per 5 minutes
-    Default: 2000
-    MinValue: 100
-    MaxValue: 100000
-
-  # Monitoring Configuration
-  EnableDetailedMonitoring:
+  CustomAmiId:
     Type: String
-    Description: Enable detailed CloudWatch monitoring
-    Default: 'true'
-    AllowedValues: ['true', 'false']
-
-  LogRetentionDays:
-    Type: Number
-    Description: CloudWatch log retention in days
-    Default: 30
-    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
+    Description: Custom AMI ID to use (leave empty to use default Amazon Linux)
+    Default: ""
 
 Conditions:
-  UseCustomAmi: !Not [!Equals [!Ref CustomAmiId, '']]
-  HasDomain: !Not [!Equals [!Ref DomainName, '']]
-  HasCertificate: !Not [!Equals [!Ref SslCertificateArn, '']]
-  NeedsCertificate: !And [!Condition HasDomain, !Not [!Condition HasCertificate]]
-  UseHttps: !Or [!Condition HasCertificate, !Condition HasDomain]
-  EnableWafCondition: !Equals [!Ref EnableWaf, 'true']
-  CreateRoute53: !Equals [!Ref CreateRoute53Records, 'true']
-
-Metadata:
-  AWS::CloudFormation::Interface:
-    ParameterGroups:
-      - Label:
-          default: Environment Configuration
-        Parameters: [Environment, ProjectName, VpcStackName, ImageBuilderStackName]
-      - Label:
-          default: EC2 Configuration
-        Parameters: [InstanceType, MinSize, MaxSize, DesiredCapacity, CustomAmiId]
-      - Label:
-          default: SSL/Domain Configuration
-        Parameters: [DomainName, SslCertificateArn, CreateRoute53Records, Route53ZoneId]
-      - Label:
-          default: Lambda Configuration
-        Parameters: [LambdaZipPath, LambdaHandler, LambdaRuntime, LambdaTimeout, LambdaMemory]
-      - Label:
-          default: Authentication
-        Parameters: [CognitoUserPoolId, CognitoUserPoolClientId]
-      - Label:
-          default: Security
-        Parameters: [EnableWaf, WafRateLimit]
-      - Label:
-          default: Monitoring
-        Parameters: [EnableDetailedMonitoring, LogRetentionDays]
+  HasDomainName: !Not [!Equals [!Ref DomainName, ""]]
+  CreateRoute53: !And [!Condition HasDomainName, !Equals [!Ref CreateRoute53Records, "true"]]
+  EnableWafCondition: !Equals [!Ref EnableWaf, "true"]
+  UseCustomAmi: !Not [!Equals [!Ref CustomAmiId, ""]]
 
 Resources:
-  # Get latest Amazon Linux 2 AMI if custom AMI not provided
-  LatestAmiInfo:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Condition: !Not [!Condition UseCustomAmi]
-
   # CloudWatch Log Groups
   NginxAccessLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: /aws/ec2/nginx/access
-      RetentionInDays: !Ref LogRetentionDays
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: ManagedBy
-          Value: cloudformation
-
-  NginxErrorLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: /aws/ec2/nginx/error
-      RetentionInDays: !Ref LogRetentionDays
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: ManagedBy
-          Value: cloudformation
-
-  HitlSyncLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: /aws/ec2/hitl/sync
-      RetentionInDays: !Ref LogRetentionDays
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: ManagedBy
-          Value: cloudformation
-
-  LambdaLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub '/aws/lambda/${ProjectName}-${Environment}-api'
-      RetentionInDays: !Ref LogRetentionDays
+      LogGroupName: /aws/ec2/nginx/access-cf
+      RetentionInDays: 30
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -266,11 +123,18 @@ Resources:
                   - s3:GetObject
                   - s3:ListBucket
                 Resource:
-                  - Fn::ImportValue: !Sub '${ImageBuilderStackName}-frontend-assets-bucket'
                   - !Sub
-                    - '${BucketArn}/*'
-                    - BucketArn:
-                        Fn::ImportValue: !Sub '${ImageBuilderStackName}-frontend-assets-bucket'
+                    - 'arn:aws:s3:::${BucketName}'
+                    - BucketName:
+                        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-frontend-assets-bucket'
+                  - !Sub
+                    - 'arn:aws:s3:::${BucketName}/*'
+                    - BucketName:
+                        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-frontend-assets-bucket'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeTags
+                Resource: '*'
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
@@ -318,12 +182,6 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
-              - Effect: Allow
-                Action:
-                  - ec2:CreateNetworkInterface
-                  - ec2:DescribeNetworkInterfaces
-                  - ec2:DeleteNetworkInterface
-                Resource: '*'
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -339,7 +197,7 @@ Resources:
       GroupName: !Sub '${ProjectName}-${Environment}-alb-sg'
       GroupDescription: Security group for Application Load Balancer
       VpcId:
-        Fn::ImportValue: !Sub '${VpcStackName}-vpc-id'
+        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-id'
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -372,7 +230,7 @@ Resources:
       GroupName: !Sub '${ProjectName}-${Environment}-ec2-sg'
       GroupDescription: Security group for EC2 instances
       VpcId:
-        Fn::ImportValue: !Sub '${VpcStackName}-vpc-id'
+        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-id'
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -407,7 +265,7 @@ Resources:
       GroupName: !Sub '${ProjectName}-${Environment}-lambda-sg'
       GroupDescription: Security group for Lambda function
       VpcId:
-        Fn::ImportValue: !Sub '${VpcStackName}-vpc-id'
+        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-id'
       SecurityGroupEgress:
         - IpProtocol: tcp
           FromPort: 443
@@ -424,29 +282,6 @@ Resources:
         - Key: ManagedBy
           Value: cloudformation
 
-  # S3 Bucket Policy for EC2 instances
-  FrontendAssetsBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket:
-        Fn::ImportValue: !Sub '${ImageBuilderStackName}-frontend-assets-bucket'
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Sid: AllowEC2InstancesRead
-            Effect: Allow
-            Principal:
-              AWS: !GetAtt EC2Role.Arn
-            Action:
-              - s3:GetObject
-              - s3:ListBucket
-            Resource:
-              - Fn::ImportValue: !Sub '${ImageBuilderStackName}-frontend-assets-bucket'
-              - !Sub
-                - '${BucketArn}/*'
-                - BucketArn:
-                    Fn::ImportValue: !Sub '${ImageBuilderStackName}-frontend-assets-bucket'
-
   # Application Load Balancer
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -458,8 +293,8 @@ Resources:
       SecurityGroups:
         - !Ref ALBSecurityGroup
       Subnets:
-        - Fn::ImportValue: !Sub '${VpcStackName}-public-subnet-1-id'
-        - Fn::ImportValue: !Sub '${VpcStackName}-public-subnet-2-id'
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-public-subnet-1-id'
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-public-subnet-2-id'
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-alb'
@@ -478,7 +313,7 @@ Resources:
       Port: 80
       Protocol: HTTP
       VpcId:
-        Fn::ImportValue: !Sub '${VpcStackName}-vpc-id'
+        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-id'
       HealthCheckPath: /health
       HealthCheckIntervalSeconds: 30
       HealthCheckTimeoutSeconds: 5
@@ -489,10 +324,6 @@ Resources:
       TargetGroupAttributes:
         - Key: stickiness.enabled
           Value: 'false'
-        - Key: stickiness.type
-          Value: lb_cookie
-        - Key: stickiness.lb_cookie.duration_seconds
-          Value: '300'
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-ec2-tg'
@@ -509,6 +340,8 @@ Resources:
     Properties:
       Name: !Sub '${ProjectName}-${Environment}-lambda-tg'
       TargetType: lambda
+      Targets:
+        - Id: !GetAtt LambdaFunction.Arn
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-lambda-tg'
@@ -524,36 +357,199 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ProjectName}-${Environment}-api'
-      Runtime: !Ref LambdaRuntime
-      Handler: !Ref LambdaHandler
+      Runtime: nodejs22.x
+      Handler: index.handler
       Role: !GetAtt LambdaRole.Arn
-      Timeout: !Ref LambdaTimeout
-      MemorySize: !Ref LambdaMemory
+      Timeout: 30
+      MemorySize: 128
       Code:
         ZipFile: |
+          const os = require('os');
+          
           exports.handler = async (event) => {
-              return {
-                  statusCode: 200,
-                  body: JSON.stringify({
-                      message: 'Hello from Lambda!',
-                      timestamp: new Date().toISOString(),
-                      environment: process.env.ENVIRONMENT,
-                      requestId: event.requestContext?.requestId
-                  })
-              };
+              console.log('Received event:', JSON.stringify(event, null, 2));
+              
+              const path = event.path || event.rawPath || '/';
+              const httpMethod = event.httpMethod || event.requestContext?.http?.method || 'GET';
+              
+              try {
+                  // Health check endpoint
+                  if (path === '/health' || path === '/api/health') {
+                      return {
+                          statusCode: 200,
+                          headers: {
+                              'Content-Type': 'text/plain',
+                              'Access-Control-Allow-Origin': '*'
+                          },
+                          body: 'healthy'
+                      };
+                  }
+                  
+                  // Detailed health check endpoint
+                  if (path === '/health-detailed' || path === '/api/health-detailed') {
+                      const healthData = {
+                          status: 'healthy',
+                          timestamp: new Date().toISOString(),
+                          environment: process.env.ENVIRONMENT || 'unknown',
+                          project: process.env.PROJECT_NAME || 'hitl-cf',
+                          version: '1.0.0',
+                          uptime: process.uptime(),
+                          memory: process.memoryUsage(),
+                          platform: os.platform(),
+                          architecture: os.arch(),
+                          nodeVersion: process.version,
+                          requestId: event.requestContext?.requestId || 'unknown'
+                      };
+                      
+                      return {
+                          statusCode: 200,
+                          headers: {
+                              'Content-Type': 'application/json',
+                              'Access-Control-Allow-Origin': '*'
+                          },
+                          body: JSON.stringify(healthData, null, 2)
+                      };
+                  }
+                  
+                  // API endpoints
+                  if (path.startsWith('/api/')) {
+                      // Sample API endpoints for demonstration
+                      if (path === '/api/status' && httpMethod === 'GET') {
+                          return {
+                              statusCode: 200,
+                              headers: {
+                                  'Content-Type': 'application/json',
+                                  'Access-Control-Allow-Origin': '*'
+                              },
+                              body: JSON.stringify({
+                                  message: 'API is working!',
+                                  timestamp: new Date().toISOString(),
+                                  environment: process.env.ENVIRONMENT,
+                                  endpoint: path,
+                                  method: httpMethod
+                              })
+                          };
+                      }
+                      
+                      if (path === '/api/info' && httpMethod === 'GET') {
+                          return {
+                              statusCode: 200,
+                              headers: {
+                                  'Content-Type': 'application/json',
+                                  'Access-Control-Allow-Origin': '*'
+                              },
+                              body: JSON.stringify({
+                                  project: 'HITL Platform',
+                                  environment: process.env.ENVIRONMENT,
+                                  deployment: 'CloudFormation',
+                                  timestamp: new Date().toISOString(),
+                                  features: [
+                                      'Lambda API Backend',
+                                      'Application Load Balancer',
+                                      'Auto Scaling Groups',
+                                      'S3 Asset Storage',
+                                      'VPC Security'
+                                  ]
+                              })
+                          };
+                      }
+                      
+                      if (path === '/api/metrics' && httpMethod === 'GET') {
+                          const functionName = process.env.AWS_LAMBDA_FUNCTION_NAME || 'hitl-cf-api';
+                          const region = process.env.AWS_REGION || 'us-east-1';
+                          const azs = ['us-east-1a', 'us-east-1b', 'us-east-1c'];
+                          const randomAZ = azs[Math.floor(Math.random() * azs.length)];
+                          
+                          return {
+                              statusCode: 200,
+                              headers: {
+                                  'Content-Type': 'application/json',
+                                  'Access-Control-Allow-Origin': '*'
+                              },
+                              body: JSON.stringify({
+                                  data: {
+                                      applications_processed: 127 + Math.floor(Math.random() * 10),
+                                      pending_review: 8 + Math.floor(Math.random() * 5),
+                                      approved_today: 15 + Math.floor(Math.random() * 5),
+                                      rejected_today: 3 + Math.floor(Math.random() * 3)
+                                  },
+                                  server_info: {
+                                      instance: {
+                                          id: `lambda-${functionName}-${Date.now().toString().slice(-8)}`,
+                                          type: 'lambda',
+                                          availability_zone: randomAZ,
+                                          region: region
+                                      },
+                                      timestamp: new Date().toISOString()
+                                  },
+                                  timestamp: new Date().toISOString()
+                              })
+                          };
+                      }
+                      
+                      // Default API response
+                      return {
+                          statusCode: 200,
+                          headers: {
+                              'Content-Type': 'application/json',
+                              'Access-Control-Allow-Origin': '*'
+                          },
+                          body: JSON.stringify({
+                              message: 'HITL Platform API - CloudFormation Deployment',
+                              timestamp: new Date().toISOString(),
+                              path: path,
+                              method: httpMethod,
+                              availableEndpoints: [
+                                  'GET /api/health',
+                                  'GET /api/health-detailed', 
+                                  'GET /api/status',
+                                  'GET /api/info'
+                              ]
+                          })
+                      };
+                  }
+                  
+                  // Default response for other paths
+                  return {
+                      statusCode: 404,
+                      headers: {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      body: JSON.stringify({
+                          error: 'Not Found',
+                          message: 'This endpoint is not handled by the Lambda API',
+                          path: path,
+                          timestamp: new Date().toISOString()
+                      })
+                  };
+                  
+              } catch (error) {
+                  console.error('Lambda error:', error);
+                  return {
+                      statusCode: 500,
+                      headers: {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      body: JSON.stringify({
+                          error: 'Internal Server Error',
+                          message: error.message,
+                          timestamp: new Date().toISOString()
+                      })
+                  };
+              }
           };
       Environment:
         Variables:
           ENVIRONMENT: !Ref Environment
           PROJECT_NAME: !Ref ProjectName
-          COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
-          COGNITO_USER_POOL_CLIENT_ID: !Ref CognitoUserPoolClientId
       VpcConfig:
         SecurityGroupIds:
           - !Ref LambdaSecurityGroup
         SubnetIds:
-          - Fn::ImportValue: !Sub '${VpcStackName}-private-subnet-1-id'
-          - Fn::ImportValue: !Sub '${VpcStackName}-private-subnet-2-id'
+          - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-private-subnet-1-id'
+          - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-private-subnet-2-id'
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -569,15 +565,176 @@ Resources:
       FunctionName: !Ref LambdaFunction
       Action: lambda:InvokeFunction
       Principal: elasticloadbalancing.amazonaws.com
-      SourceArn: !Ref LambdaTargetGroup
 
-  # Attach Lambda to target group
-  LambdaTargetGroupAttachment:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroupAttachment
+  # Note: Lambda target group attachment is handled automatically by the target group
+
+  # ACM Certificate for HTTPS (conditional)
+  SSLCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: HasDomainName
     Properties:
-      TargetGroupArn: !Ref LambdaTargetGroup
-      TargetId: !GetAtt LambdaFunction.Arn
-    DependsOn: LambdaPermissionForALB
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref Route53ZoneId
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-cert'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # WAF v2 Web ACL for ALB protection (conditional)
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Condition: EnableWafCondition
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-web-acl'
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      Rules:
+        # Rate limiting rule
+        - Name: RateLimitRule
+          Priority: 1
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 2000
+              AggregateKeyType: IP
+              ScopeDownStatement:
+                GeoMatchStatement:
+                  CountryCodes: ["US"]
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitRule
+        # AWS Managed Rules for SQL injection protection
+        - Name: AWSManagedRulesSQLiRuleSet
+          Priority: 2
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesSQLiRuleSet
+        # AWS Managed Rules for XSS protection
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 3
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesKnownBadInputsRuleSet
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${ProjectName}-${Environment}-web-acl'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-web-acl'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Associate WAF with ALB
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Condition: EnableWafCondition
+    Properties:
+      ResourceArn: !Ref ApplicationLoadBalancer
+      WebACLArn: !GetAtt WebACL.Arn
+
+  # Route53 A record pointing to ALB (conditional)
+  Route53Record:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateRoute53
+    Properties:
+      HostedZoneId: !Ref Route53ZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+  # HTTPS Listener (conditional)
+  HTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasDomainName
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref SSLCertificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetGroup
+
+  # HTTPS Listener Rule for API (conditional)
+  HTTPSAPIListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: HasDomainName
+    Properties:
+      ListenerArn: !Ref HTTPSListener
+      Priority: 100
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref LambdaTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values: ['/api/*']
+
+  # HTTP to HTTPS redirect rule (conditional)
+  HTTPRedirectRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: HasDomainName
+    Properties:
+      ListenerArn: !Ref HTTPListener
+      Priority: 1
+      Actions:
+        - Type: redirect
+          RedirectConfig:
+            Port: 443
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+      Conditions:
+        - Field: host-header
+          Values: [!Ref DomainName]
+
+  # Certificate expiration alarm (conditional)
+  CertificateExpiryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasDomainName
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-cert-expiry'
+      AlarmDescription: SSL certificate expiration monitoring
+      ComparisonOperator: LessThanThreshold
+      EvaluationPeriods: 1
+      MetricName: DaysToExpiry
+      Namespace: AWS/CertificateManager
+      Period: 86400
+      Statistic: Minimum
+      Threshold: 30
+      TreatMissingData: breaching
+      Dimensions:
+        - Name: CertificateArn
+          Value: !Ref SSLCertificate
 
   # HTTP Listener
   HTTPListener:
@@ -587,20 +744,12 @@ Resources:
       Port: 80
       Protocol: HTTP
       DefaultActions:
-        - !If
-          - UseHttps
-          - Type: redirect
-            RedirectConfig:
-              Protocol: HTTPS
-              Port: '443'
-              StatusCode: HTTP_301
-          - Type: forward
-            TargetGroupArn: !Ref EC2TargetGroup
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetGroup
 
-  # HTTP Listener Rule for API (when using HTTP only)
+  # HTTP Listener Rule for API
   HTTPAPIListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    Condition: !Not [!Condition UseHttps]
     Properties:
       ListenerArn: !Ref HTTPListener
       Priority: 100
@@ -617,45 +766,217 @@ Resources:
     Properties:
       LaunchTemplateName: !Sub '${ProjectName}-${Environment}-web-template'
       LaunchTemplateData:
-        ImageId: !If [UseCustomAmi, !Ref CustomAmiId, !Ref LatestAmiInfo]
+        ImageId: !If 
+          - UseCustomAmi
+          - !Ref CustomAmiId
+          - '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}'
         InstanceType: !Ref InstanceType
         SecurityGroupIds:
           - !Ref EC2SecurityGroup
         IamInstanceProfile:
           Name: !Ref EC2InstanceProfile
-        Monitoring:
-          Enabled: !Ref EnableDetailedMonitoring
         MetadataOptions:
           HttpEndpoint: enabled
           HttpTokens: required
           HttpPutResponseHopLimit: 1
           InstanceMetadataTags: enabled
         UserData:
-          Fn::Base64: !Sub |
-            #!/bin/bash
-            yum update -y
-            
-            # Set up cron job for S3 sync (every 2 minutes)
-            echo "*/2 * * * * root /usr/local/bin/sync-from-s3.sh >> /var/log/hitl/sync.log 2>&1" >> /etc/crontab
-            echo "*/5 * * * * root /usr/local/bin/generate-health.sh >> /var/log/hitl/health.log 2>&1" >> /etc/crontab
-            
-            # Environment variables for scripts
-            echo "export S3_BUCKET=${ImageBuilderStackName}-frontend-assets-bucket" >> /etc/environment
-            echo "export AWS_REGION=${AWS::Region}" >> /etc/environment
-            echo "export ENVIRONMENT=${Environment}" >> /etc/environment
-            echo "export PROJECT_NAME=${ProjectName}" >> /etc/environment
-            
-            # Initial sync and health generation
-            if [ -f /usr/local/bin/sync-from-s3.sh ]; then
-                /usr/local/bin/sync-from-s3.sh
-            fi
-            
-            if [ -f /usr/local/bin/generate-health.sh ]; then
-                /usr/local/bin/generate-health.sh
-            fi
-            
-            # Restart cron to pick up new jobs
-            systemctl restart crond
+          Fn::Base64: !Sub 
+            - |
+              #!/bin/bash
+              
+              # HITL Platform - EC2 User Data Script
+              # Configures instance for serving React frontend from S3
+              
+              set -e
+              
+              # Configuration from CloudFormation template variables
+              S3_BUCKET_NAME="${S3Bucket}"
+              AWS_REGION="${AWS::Region}"
+              ENVIRONMENT="${Environment}"
+              PROJECT_NAME="${ProjectName}"
+              LAMBDA_FUNCTION_URL="${LambdaFunction}"
+              
+              # Logging
+              LOG_FILE="/var/log/user-data.log"
+              exec > >(tee -a $LOG_FILE)
+              exec 2>&1
+              
+              echo "Starting HITL Platform EC2 configuration..."
+              echo "S3 Bucket: $S3_BUCKET_NAME"
+              echo "Region: $AWS_REGION"
+              echo "Environment: $ENVIRONMENT"
+              
+              # Set environment variables for services
+              cat > /etc/environment << EOF
+              S3_BUCKET_NAME=$S3_BUCKET_NAME
+              AWS_DEFAULT_REGION=$AWS_REGION
+              HITL_S3_BUCKET=$S3_BUCKET_NAME
+              ENVIRONMENT=$ENVIRONMENT
+              PROJECT_NAME=$PROJECT_NAME
+              EOF
+              
+              # Source environment
+              source /etc/environment
+              
+              # Check if we're using base AMI or custom AMI with OpenResty
+              if [ ! -f "/usr/local/openresty/nginx/sbin/nginx" ]; then
+                  echo "Using base AMI - installing nginx and dependencies..."
+                  yum update -y
+                  # Install nginx using Amazon Linux Extras (required for AL2)
+                  amazon-linux-extras install -y nginx1
+                  yum install -y awscli
+                  systemctl enable nginx
+              else
+                  echo "Using custom AMI with OpenResty already installed"
+              fi
+              
+              # Configure OpenResty with complete server block
+              echo "Configuring OpenResty server block..."
+              mkdir -p /usr/local/openresty/nginx/conf/conf.d
+              cat > /usr/local/openresty/nginx/conf/conf.d/default.conf << EOF
+              server {
+                  listen 80 default_server;
+                  listen [::]:80 default_server;
+                  server_name _;
+                  root /var/www/html;
+                  index index.html index.htm;
+              
+                  # Serve static files
+                  location / {
+                      try_files \$uri \$uri/ /index.html;
+                      add_header Cache-Control "public, max-age=3600";
+                  }
+              
+                  # API calls are handled by ALB routing directly to Lambda
+                  # No nginx proxy needed - ALB routes /api/* to Lambda target group
+              
+                  # Health check endpoints
+                  location /health {
+                      access_log off;
+                      return 200 "healthy\n";
+                      add_header Content-Type text/plain;
+                  }
+              
+                  location /health-detailed {
+                      access_log off;
+                      return 200 "{\\"status\\": \\"healthy\\", \\"timestamp\\": \\"$(date -Iseconds)\\", \\"instance\\": \\"$(curl -s http://169.254.169.254/latest/meta-data/instance-id)\\"}\n";
+                      add_header Content-Type application/json;
+                  }
+              
+                  # Security headers
+                  add_header X-Frame-Options "SAMEORIGIN" always;
+                  add_header X-XSS-Protection "1; mode=block" always;
+                  add_header X-Content-Type-Options "nosniff" always;
+                  add_header Referrer-Policy "no-referrer-when-downgrade" always;
+              }
+              EOF
+              
+              # Get EC2 instance metadata using IMDSv2 and inject into nginx config
+              echo "Injecting EC2 instance metadata into nginx configuration..."
+              TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+              INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+              AVAILABILITY_ZONE=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+              INSTANCE_TYPE=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type)
+              
+              echo "Instance ID: $INSTANCE_ID"
+              echo "Availability Zone: $AVAILABILITY_ZONE" 
+              echo "Instance Type: $INSTANCE_TYPE"
+              
+              # Add headers to location / block in OpenResty config (only once)
+              sed -i "/try_files.*index.html/a\\        add_header X-Instance-ID $INSTANCE_ID always;" /usr/local/openresty/nginx/conf/conf.d/default.conf
+              
+              # Create web directory and S3 sync configuration
+              echo "Setting up web directory and S3 sync configuration..."
+              mkdir -p /var/www/html
+              mkdir -p /etc/hitl
+              chown nobody:nobody /var/www/html 2>/dev/null || chown nginx:nginx /var/www/html 2>/dev/null || true
+              
+              # Download helper scripts from S3
+              echo "Downloading helper scripts from S3..."
+              SCRIPTS_BUCKET="${S3Bucket}"
+              aws s3 cp s3://$SCRIPTS_BUCKET/scripts/sync-from-s3.sh /usr/local/bin/sync-from-s3.sh --region=${AWS::Region} || {
+                  echo "ERROR: Could not download sync-from-s3.sh from S3"
+                  exit 1
+              }
+              
+              aws s3 cp s3://$SCRIPTS_BUCKET/scripts/generate-health.sh /usr/local/bin/health-check.sh --region=${AWS::Region} || {
+                  echo "ERROR: Could not download generate-health.sh from S3"
+                  exit 1
+              }
+              
+              # Set up cron job for S3 sync (every 2 minutes)
+              echo "*/2 * * * * root source /etc/environment; /usr/local/bin/sync-from-s3.sh" > /etc/cron.d/s3-sync
+              
+              # Set up health check cron job (every minute)
+              echo "* * * * * root /usr/local/bin/health-check.sh" > /etc/cron.d/health-check
+              
+              # Make sure scripts are executable
+              chmod +x /usr/local/bin/sync-from-s3.sh
+              chmod +x /usr/local/bin/health-check.sh
+              
+              # Create log directory
+              mkdir -p /var/log/hitl
+              
+              # Initial S3 sync to get React build
+              echo "Performing initial S3 sync..."
+              if ! /usr/local/bin/sync-from-s3.sh; then
+                  echo "ERROR: Initial S3 sync failed - no fallback content will be created"
+                  exit 1
+              fi
+              echo "Initial S3 sync completed successfully"
+              
+              # Generate initial health check
+              echo "Generating initial health check..."
+              /usr/local/bin/health-check.sh || true
+              
+              # Test OpenResty configuration
+              echo "Testing OpenResty configuration..."
+              if /usr/local/openresty/nginx/sbin/nginx -t; then
+                  echo "OpenResty configuration is valid"
+                  systemctl restart openresty
+                  systemctl enable openresty
+                  echo "OpenResty restarted successfully"
+              else
+                  echo "OpenResty configuration test failed"
+                  systemctl status openresty || true
+              fi
+              
+              # Start and enable CloudWatch agent if available
+              if [ -f "/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl" ]; then
+                  echo "Starting CloudWatch agent..."
+                  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+                      -a fetch-config -m ec2 -s \
+                      -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json || true
+              fi
+              
+              # Set up log rotation for our custom logs
+              cat > /etc/logrotate.d/hitl << 'EOF'
+              /var/log/hitl/*.log {
+                  daily
+                  missingok
+                  rotate 7
+                  compress
+                  notifempty
+                  create 644 root root
+                  postrotate
+                      systemctl reload openresty > /dev/null 2>&1 || true
+                  endscript
+              }
+              EOF
+              
+              echo "EC2 instance configuration completed successfully!"
+              echo "Services status:"
+              systemctl status openresty --no-pager -l || true
+              echo "S3 sync status:"
+              ls -la /var/www/html/ || true
+              
+              # Signal completion to CloudFormation/Auto Scaling (if needed)
+              # This would be used with CloudFormation CreationPolicy or ASG lifecycle hooks
+              echo "User data script completed at $(date)"
+            - S3Bucket:
+                Fn::ImportValue: !Sub '${ProjectName}-${Environment}-frontend-assets-bucket'
+              LambdaFunction: !GetAtt LambdaFunction.Arn
         TagSpecifications:
           - ResourceType: instance
             Tags:
@@ -667,6 +988,9 @@ Resources:
                 Value: !Ref ProjectName
               - Key: ManagedBy
                 Value: cloudformation
+              - Key: S3Bucket
+                Value:
+                  Fn::ImportValue: !Sub '${ProjectName}-${Environment}-frontend-assets-bucket'
 
   # Auto Scaling Group
   AutoScalingGroup:
@@ -680,8 +1004,8 @@ Resources:
       MaxSize: !Ref MaxSize
       DesiredCapacity: !Ref DesiredCapacity
       VPCZoneIdentifier:
-        - Fn::ImportValue: !Sub '${VpcStackName}-private-subnet-1-id'
-        - Fn::ImportValue: !Sub '${VpcStackName}-private-subnet-2-id'
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-private-subnet-1-id'
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-private-subnet-2-id'
       TargetGroupARNs:
         - !Ref EC2TargetGroup
       HealthCheckType: ELB
@@ -700,103 +1024,6 @@ Resources:
           Value: cloudformation
           PropagateAtLaunch: true
 
-  # Auto Scaling Policies
-  ScaleUpPolicy:
-    Type: AWS::AutoScaling::ScalingPolicy
-    Properties:
-      AutoScalingGroupName: !Ref AutoScalingGroup
-      PolicyType: SimpleScaling
-      ScalingAdjustment: 1
-      AdjustmentType: ChangeInCapacity
-      Cooldown: 300
-
-  ScaleDownPolicy:
-    Type: AWS::AutoScaling::ScalingPolicy
-    Properties:
-      AutoScalingGroupName: !Ref AutoScalingGroup
-      PolicyType: SimpleScaling
-      ScalingAdjustment: -1
-      AdjustmentType: ChangeInCapacity
-      Cooldown: 300
-
-  # CloudWatch Alarms
-  CPUHighAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub '${ProjectName}-${Environment}-cpu-high'
-      AlarmDescription: This metric monitors ec2 cpu utilization
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: 120
-      EvaluationPeriods: 2
-      Threshold: 70
-      ComparisonOperator: GreaterThanThreshold
-      Dimensions:
-        - Name: AutoScalingGroupName
-          Value: !Ref AutoScalingGroup
-      AlarmActions:
-        - !Ref ScaleUpPolicy
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: ManagedBy
-          Value: cloudformation
-
-  CPULowAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub '${ProjectName}-${Environment}-cpu-low'
-      AlarmDescription: This metric monitors ec2 cpu utilization
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: 120
-      EvaluationPeriods: 2
-      Threshold: 20
-      ComparisonOperator: LessThanThreshold
-      Dimensions:
-        - Name: AutoScalingGroupName
-          Value: !Ref AutoScalingGroup
-      AlarmActions:
-        - !Ref ScaleDownPolicy
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: ManagedBy
-          Value: cloudformation
-
-  # ALB Target Health Alarm
-  ALBUnhealthyTargetAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub '${ProjectName}-${Environment}-alb-unhealthy-targets'
-      AlarmDescription: This metric monitors ALB healthy target count
-      MetricName: HealthyHostCount
-      Namespace: AWS/ApplicationELB
-      Statistic: Average
-      Period: 60
-      EvaluationPeriods: 2
-      Threshold: 1
-      ComparisonOperator: LessThanThreshold
-      TreatMissingData: breaching
-      Dimensions:
-        - Name: TargetGroup
-          Value: !GetAtt EC2TargetGroup.TargetGroupFullName
-        - Name: LoadBalancer
-          Value: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: ManagedBy
-          Value: cloudformation
-
 Outputs:
   # Application URLs
   ApplicationURL:
@@ -804,13 +1031,6 @@ Outputs:
     Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}'
     Export:
       Name: !Sub '${ProjectName}-${Environment}-application-url'
-
-  ApplicationHTTPSURL:
-    Description: Application URL (HTTPS)
-    Condition: UseHttps
-    Value: !Sub 'https://${ApplicationLoadBalancer.DNSName}'
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-application-https-url'
 
   # Load Balancer Information
   LoadBalancerDNSName:
@@ -829,7 +1049,7 @@ Outputs:
   S3BucketName:
     Description: Name of the S3 bucket for frontend assets
     Value:
-      Fn::ImportValue: !Sub '${ImageBuilderStackName}-frontend-assets-bucket'
+      Fn::ImportValue: !Sub '${ProjectName}-${Environment}-frontend-assets-bucket'
     Export:
       Name: !Sub '${ProjectName}-${Environment}-s3-bucket-name'
 
@@ -847,21 +1067,26 @@ Outputs:
     Export:
       Name: !Sub '${ProjectName}-${Environment}-lambda-arn'
 
-  # Security Groups
-  ALBSecurityGroupId:
-    Description: Security group ID for ALB
-    Value: !Ref ALBSecurityGroup
+  # Domain URL (conditional)
+  DomainURL:
+    Condition: HasDomainName
+    Description: The HTTPS URL of the application
+    Value: !Sub 'https://${DomainName}'
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-alb-sg-id'
+      Name: !Sub '${ProjectName}-${Environment}-domain-url'
 
-  EC2SecurityGroupId:
-    Description: Security group ID for EC2 instances
-    Value: !Ref EC2SecurityGroup
+  # SSL Certificate ARN (conditional)
+  CertificateArn:
+    Condition: HasDomainName
+    Description: ARN of the SSL certificate
+    Value: !Ref SSLCertificate
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-ec2-sg-id'
+      Name: !Sub '${ProjectName}-${Environment}-certificate-arn'
 
-  LambdaSecurityGroupId:
-    Description: Security group ID for Lambda function
-    Value: !Ref LambdaSecurityGroup
+  # WAF Web ACL ARN (conditional)
+  WebACLArn:
+    Condition: EnableWafCondition
+    Description: ARN of the WAF Web ACL
+    Value: !GetAtt WebACL.Arn
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-lambda-sg-id'
+      Name: !Sub '${ProjectName}-${Environment}-waf-arn'

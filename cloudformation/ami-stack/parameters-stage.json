@@ -5,10 +5,10 @@
   },
   {
     "ParameterKey": "ProjectName",
-    "ParameterValue": "hitl"
+    "ParameterValue": "hitl-cf"
   },
   {
     "ParameterKey": "VpcStackName",
-    "ParameterValue": "hitl-stage-vpc"
+    "ParameterValue": "hitl-cf-stage-vpc"
   }
 ]

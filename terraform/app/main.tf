@@ -1,9 +1,9 @@
-# Fetch AMI ID from image-builder stack
-data "terraform_remote_state" "image_builder" {
+# Fetch AMI ID from ami stack
+data "terraform_remote_state" "ami" {
   backend = "local"
 
   config = {
-    path = "../image-builder/terraform.tfstate"
+    path = "../ami/terraform.tfstate"
   }
 }
 
@@ -32,12 +32,12 @@ locals {
     }
   )
   
-  # Use AMI from image-builder stack if available, fallback to custom AMI, then default
-  ami_id = try(data.terraform_remote_state.image_builder.outputs.built_ami_id, var.custom_ami_id != "" ? var.custom_ami_id : "")
+  # Use AMI from ami stack if available, fallback to custom AMI, then default
+  ami_id = try(data.terraform_remote_state.ami.outputs.built_ami_id, var.custom_ami_id != "" ? var.custom_ami_id : "")
   use_custom_ami = local.ami_id != ""
   
-  # Use S3 bucket created by image-builder stack
-  s3_bucket_name = data.terraform_remote_state.image_builder.outputs.frontend_assets_bucket
+  # Use S3 bucket created by ami stack
+  s3_bucket_name = data.terraform_remote_state.ami.outputs.frontend_assets_bucket
   
   # Use VPC info from VPC stack
   vpc_id = data.terraform_remote_state.vpc.outputs.vpc_id
@@ -46,7 +46,7 @@ locals {
   vpc_cidr_block = data.terraform_remote_state.vpc.outputs.vpc_cidr_block
 }
 
-# Random suffix no longer needed - Image Builder creates bucket with unique naming
+# Random suffix no longer needed - AMI stack creates bucket with unique naming
 
 # Data source to get latest Amazon Linux 2 AMI if custom AMI not provided
 data "aws_ami" "amazon_linux" {
@@ -70,7 +70,7 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# Reference S3 bucket created by Image Builder stack
+# Reference S3 bucket created by AMI stack
 data "aws_s3_bucket" "frontend_assets" {
   bucket = local.s3_bucket_name
 }
@@ -117,7 +117,7 @@ resource "aws_cloudwatch_log_group" "nginx_error" {
 }
 
 resource "aws_cloudwatch_log_group" "hitl_sync" {
-  name              = "/aws/ec2/hitl/sync"
+  name              = "/aws/ec2/${local.project_name}/sync"
   retention_in_days = var.log_retention_days
 
   tags = local.common_tags

@@ -5,15 +5,15 @@
   },
   {
     "ParameterKey": "ProjectName",
-    "ParameterValue": "hitl"
+    "ParameterValue": "hitl-cf"
   },
   {
     "ParameterKey": "VpcStackName",
-    "ParameterValue": "hitl-dev-vpc"
+    "ParameterValue": "hitl-cf-dev-vpc"
   },
   {
-    "ParameterKey": "ImageBuilderStackName",
-    "ParameterValue": "hitl-dev-image-builder"
+    "ParameterKey": "AmiStackName",
+    "ParameterValue": "hitl-cf-dev-ami"
   },
   {
     "ParameterKey": "InstanceType",
@@ -37,7 +37,7 @@
   },
   {
     "ParameterKey": "DomainName",
-    "ParameterValue": ""
+    "ParameterValue": "hitl-cf.emg1.com"
   },
   {
     "ParameterKey": "SslCertificateArn",
@@ -45,11 +45,11 @@
   },
   {
     "ParameterKey": "CreateRoute53Records",
-    "ParameterValue": "false"
+    "ParameterValue": "true"
   },
   {
     "ParameterKey": "Route53ZoneId",
-    "ParameterValue": ""
+    "ParameterValue": "Z06144693848E68QIDQLM"
   },
   {
     "ParameterKey": "LambdaHandler",

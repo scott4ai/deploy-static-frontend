@@ -11,7 +11,7 @@ Parameters:
   ProjectName:
     Type: String
     Description: Project name for resource naming
-    Default: hitl
+    Default: hitl-cf
 
   VpcCidr:
     Type: String

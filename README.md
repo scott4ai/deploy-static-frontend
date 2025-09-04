@@ -99,7 +99,7 @@ Layer 6: Monitoring   → CloudWatch, VPC Flow Logs, access logging
 git clone <repository> && cd deploy-static-frontend
 cd demo-app && npm install && npm run build && cd ..
 cd terraform/vpc && terraform init && terraform apply -auto-approve
-cd ../image-builder && terraform init && terraform apply -auto-approve
+cd ../ami && terraform init && terraform apply -auto-approve
 # Wait 15-20 minutes for AMI build
 cd ../app && terraform init && terraform apply -auto-approve
 terraform output application_url
@@ -107,10 +107,10 @@ terraform output application_url
 
 #### Option B: Using CloudFormation
 ```bash
-# Clone and deploy everything
+# Clone and deploy everything with automatic AMI build
 git clone <repository> && cd deploy-static-frontend
 cd demo-app && npm install && npm run build && cd ..
-./cloudformation/deploy.sh -e dev -s all
+./cloudformation/deploy.sh -e dev --build-ami
 # Wait 15-20 minutes for AMI build, then access the URL shown
 ```
 
@@ -141,7 +141,7 @@ terraform apply -auto-approve
 
 #### 3️⃣ Build Golden AMI (Automated)
 ```bash
-cd ../image-builder
+cd ../ami
 terraform init
 terraform apply -auto-approve
 # Automatically triggers AMI build via EC2 Image Builder
@@ -178,16 +178,17 @@ npm run build  # Creates build/ directory with static files
 cd ..
 ```
 
-#### 2️⃣ Deploy All Stacks (Recommended)
+#### 2️⃣ Deploy All Stacks with AMI Build (Recommended)
 ```bash
-# Deploy all three stacks in the correct order
-./cloudformation/deploy.sh -e dev -s all
+# Deploy all stacks and build AMI automatically
+./cloudformation/deploy.sh -e dev --build-ami
 
 # The script will:
 # 1. Deploy VPC stack (network foundation)
-# 2. Deploy Image Builder stack (creates S3 buckets and AMI pipeline)
-# 3. Wait for dependencies
-# 4. Deploy Application stack (ALB, ASG, Lambda)
+# 2. Deploy AMI stack (creates S3 buckets and triggers Image Builder)
+# 3. Wait for AMI build completion (15-20 minutes)
+# 4. Deploy Application stack with new AMI (ALB, ASG, Lambda)
+# 5. Upload React app and sync to EC2 instances
 ```
 
 #### 3️⃣ Alternative: Deploy Stacks Individually
@@ -197,24 +198,27 @@ cd ..
 # Deploy VPC stack first
 ./cloudformation/deploy.sh -e dev -s vpc
 
-# Deploy Image Builder stack (requires VPC)
-./cloudformation/deploy.sh -e dev -s image-builder
-# Note: AMI build will start automatically (15-20 min)
+# Deploy AMI stack and trigger build
+./cloudformation/deploy.sh -e dev -s ami --build-ami
+# Wait for AMI build completion (15-20 minutes)
 
-# Deploy Application stack (requires VPC and Image Builder)
+# Deploy Application stack with built AMI
 ./cloudformation/deploy.sh -e dev -s app
 ```
 
-#### 4️⃣ Upload React App to S3
+#### 4️⃣ React App Deployment (Automatic)
 ```bash
-# Get the S3 bucket name from stack outputs
+# The deploy.sh script automatically:
+# 1. Builds the React app (if not already built)
+# 2. Uploads to S3 bucket
+# 3. Syncs to EC2 instances via cron job
+
+# Manual upload if needed:
 S3_BUCKET=$(aws cloudformation describe-stacks \
-  --stack-name hitl-dev-app \
+  --stack-name hitl-cf-dev-app \
   --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' \
   --output text)
-
-# Upload React build files
-aws s3 sync ./demo-app/build/ s3://$S3_BUCKET/
+aws s3 sync ./demo-app/build/ s3://$S3_BUCKET/build/
 ```
 
 #### 5️⃣ Access Application
@@ -232,8 +236,11 @@ aws cloudformation describe-stacks \
 # Check stack status
 ./cloudformation/deploy.sh -e dev -a status
 
-# Update existing stacks
-./cloudformation/deploy.sh -e dev -a update
+# Update existing stacks (includes Lambda updates)
+./cloudformation/deploy.sh -e dev -s app -a update
+
+# Force instance refresh after updates
+# (Automatically triggered on app stack updates)
 
 # Delete all stacks (WARNING: Destructive)
 ./cloudformation/deploy.sh -e dev -a delete -s all
@@ -279,14 +286,14 @@ We maintain **3 separate state files (Terraform) or stacks (CloudFormation)** fo
 #### Terraform State Files:
 ```
 terraform/vpc/terraform.tfstate         → VPC infrastructure
-terraform/image-builder/terraform.tfstate → AMI builder
+terraform/ami/terraform.tfstate → AMI builder
 terraform/app/terraform.tfstate         → Application
 ```
 
 #### CloudFormation Stacks:
 ```
 hitl-{env}-vpc           → VPC infrastructure stack
-hitl-{env}-image-builder → AMI builder stack
+hitl-{env}-ami → AMI builder stack
 hitl-{env}-app           → Application stack
 ```
 
@@ -332,8 +339,8 @@ ENVIRONMENT=prod make deploy-vpc deploy-app
 | **Security Groups** | Least-privilege | Network access control |
 
 ### Golden AMI Pipeline
-**Terraform:** `terraform/image-builder/`  
-**CloudFormation:** `cloudformation/image-builder-stack/`
+**Terraform:** `terraform/ami/`  
+**CloudFormation:** `cloudformation/ami-stack/`
 
 **Fully Automated Build Process:**
 1. `terraform apply` or `cloudformation deploy` triggers pipeline
@@ -357,13 +364,24 @@ ENVIRONMENT=prod make deploy-vpc deploy-app
 
 | Component | Configuration | Features |
 |-----------|--------------|----------|
-| **ALB** | Multi-AZ, HTTPS, public subnets | Path-based routing, health checks |
-| **Auto Scaling Group** | 2-4 instances, t3.small, private subnets | Automatic scaling, rolling updates |
-| **Launch Template** | Golden AMI, user data | Instance configuration |
-| **Lambda Function** | Node.js 22, 128MB, private subnets | API backend, VPC endpoints access |
-| **S3 Bucket** | Private, encrypted | Static asset storage |
+| **ALB** | Multi-AZ, HTTPS, public subnets | Path-based routing `/api/*` → Lambda, health checks |
+| **Auto Scaling Group** | 2-4 instances, t3.small, private subnets | Automatic scaling, instance refresh on updates |
+| **Launch Template** | Golden AMI, user data | Instance configuration, automatic refresh |
+| **Lambda Function** | Node.js 22, 128MB, private subnets | API backend with full endpoint suite |
+| **S3 Bucket** | Private, encrypted | Static assets with automatic EC2 sync |
 | **CloudWatch** | Logs, metrics, alarms | Monitoring via VPC endpoints |
 | **WAF** (optional) | 8 rule groups | Security protection |
+
+#### Lambda API Endpoints
+The Lambda function provides these REST API endpoints (routed via ALB):
+
+| Endpoint | Method | Description | Response |
+|----------|--------|-------------|----------|
+| `/api/health` | GET | Basic health check | `"healthy"` |
+| `/api/health-detailed` | GET | Detailed system status | System metrics, memory, uptime |
+| `/api/status` | GET | API operational status | Environment, timestamp |
+| `/api/info` | GET | Platform information | Features, deployment type |
+| `/api/metrics` | GET | Application metrics | Server info, performance data |
 
 ## 🎯 Key Features
 
@@ -372,12 +390,17 @@ ENVIRONMENT=prod make deploy-vpc deploy-app
 The React application displays real-time infrastructure information:
 
 ```javascript
-// Frontend shows:
+// Frontend displays real-time infrastructure data:
 {
   "instanceId": "i-0abc123def456789",    // Current EC2 instance
   "availabilityZone": "us-east-1a",      // Instance location
   "region": "us-east-1",                 // AWS region
-  "lambdaResponse": {...},               // Backend API response
+  "lambdaAPI": {                         // Lambda backend (via ALB routing)
+    "instanceId": "lambda-hitl-cf-dev-api-46263324",
+    "type": "lambda",
+    "zone": "us-east-1b",
+    "status": "active"
+  },
   "s3SyncStatus": {                      // Sync monitoring
     "lastSync": "2024-01-15T10:30:00Z",
     "secondsAgo": 45,
@@ -763,7 +786,7 @@ terraform plan  # Review changes
 terraform apply -auto-approve
 
 # For AMI updates
-cd terraform/image-builder
+cd terraform/ami
 # Increment version in main.tf
 terraform apply -auto-approve  # Triggers rebuild
 
@@ -776,7 +799,7 @@ terraform apply -auto-approve
 
 ```bash
 # 1. Build new AMI with updated app
-cd terraform/image-builder
+cd terraform/ami
 # Update version number
 terraform apply -auto-approve
 
@@ -803,7 +826,7 @@ aws autoscaling describe-instance-refreshes \
 # Validate Terraform
 cd terraform/vpc && terraform validate
 cd ../app && terraform validate
-cd ../image-builder && terraform validate
+cd ../ami && terraform validate
 
 # Dry run
 terraform plan -detailed-exitcode
@@ -816,7 +839,7 @@ aws cloudformation validate-template \
   --template-body file://cloudformation/vpc-stack/vpc-template.yaml
 
 aws cloudformation validate-template \
-  --template-body file://cloudformation/image-builder-stack/image-builder-template.yaml
+  --template-body file://cloudformation/ami-stack/ami-template.yaml
 
 aws cloudformation validate-template \
   --template-body file://cloudformation/app-stack/app-template.yaml
@@ -903,7 +926,7 @@ deploy-static-frontend/
 │   │   ├── outputs.tf
 │   │   └── terraform.tfstate
 │   │
-│   ├── image-builder/          # AMI pipeline (State 2)
+│   ├── ami/          # AMI pipeline (State 2)
 │   │   ├── main.tf            # EC2 Image Builder config
 │   │   ├── variables.tf
 │   │   ├── outputs.tf
@@ -928,8 +951,8 @@ deploy-static-frontend/
 │   │   ├── parameters-stage.json
 │   │   └── parameters-prod.json
 │   │
-│   ├── image-builder-stack/   # AMI pipeline (Stack 2)
-│   │   ├── image-builder-template.yaml
+│   ├── ami-stack/   # AMI pipeline (Stack 2)
+│   │   ├── ami-template.yaml
 │   │   ├── parameters-dev.json
 │   │   ├── parameters-stage.json
 │   │   └── parameters-prod.json
@@ -967,7 +990,7 @@ deploy-static-frontend/
 | `make build-frontend` | Build React application only |
 | `make build-lambda` | Build Lambda function only |
 | `make deploy-vpc` | Deploy VPC infrastructure |
-| `make deploy-image-builder-pipeline` | Deploy AMI builder |
+| `make deploy-ami-pipeline` | Deploy AMI builder |
 | `make deploy-app` | Deploy application stack |
 | `make get-latest-ami` | Get most recent AMI ID |
 | `make update-ami-id` | Update tfvars with new AMI |
@@ -1077,10 +1100,11 @@ This project demonstrates:
 - ✅ FedRAMP High compliance capabilities
 - ✅ Cost-optimized architecture (~$55/month)
 - ✅ Visual proof of load balancing
-- ✅ Automated infrastructure deployment
-- ✅ Golden AMI pipeline automation
-- ✅ Real-time S3 sync monitoring
-- ✅ Zero-downtime deployments
+- ✅ Automated infrastructure deployment (Terraform & CloudFormation)
+- ✅ Golden AMI pipeline automation with EC2 Image Builder
+- ✅ Real-time S3 sync monitoring with visual status indicators
+- ✅ Zero-downtime deployments with automatic instance refresh
+- ✅ Lambda API backend with ALB routing
 - ✅ Complete security controls
 - ✅ Production-ready architecture
 
@@ -1090,4 +1114,12 @@ This project demonstrates:
 
 *This solution enables secure, compliant, and cost-effective deployment of modern web applications in highly regulated environments without relying on commonly restricted services.*
 
-**Version:** 1.0.0 | **Last Updated:** 2024-01-15 | **Status:** Production Ready
+**Version:** 2.0.0 | **Last Updated:** 2025-09-03 | **Status:** Production Ready
+
+### Recent Updates (v2.0.0)
+- Full CloudFormation implementation alongside Terraform
+- Automatic AMI build integration with `--build-ami` flag
+- Lambda API endpoints with proper ALB routing
+- Automatic instance refresh on application updates
+- Fixed OpenResty configuration and S3 sync permissions
+- Enhanced deployment script with comprehensive error handling

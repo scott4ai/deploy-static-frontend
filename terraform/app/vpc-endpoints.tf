@@ -22,6 +22,6 @@ data "aws_vpc_endpoint" "ssm" {
 
 # Use existing VPC endpoints security group from VPC stack
 data "aws_security_group" "vpc_endpoints" {
-  name   = "hitl-dev-vpc-endpoints"
+  name   = "${local.project_name}-${local.environment}-vpc-endpoints"
   vpc_id = local.vpc_id
 }

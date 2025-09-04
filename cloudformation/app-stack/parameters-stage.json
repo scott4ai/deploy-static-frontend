@@ -5,15 +5,15 @@
   },
   {
     "ParameterKey": "ProjectName",
-    "ParameterValue": "hitl"
+    "ParameterValue": "hitl-cf"
   },
   {
     "ParameterKey": "VpcStackName",
-    "ParameterValue": "hitl-stage-vpc"
+    "ParameterValue": "hitl-cf-stage-vpc"
   },
   {
-    "ParameterKey": "ImageBuilderStackName",
-    "ParameterValue": "hitl-stage-image-builder"
+    "ParameterKey": "AmiStackName",
+    "ParameterValue": "hitl-cf-stage-ami"
   },
   {
     "ParameterKey": "InstanceType",

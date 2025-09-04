@@ -51,7 +51,7 @@ server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
-    root /var/www/hitl;
+    root /var/www/html;
     index index.html index.htm;
 
     # Serve static files
@@ -114,9 +114,9 @@ sed -i "/try_files.*index.html/a\\        add_header X-Instance-ID $INSTANCE_ID 
 
 # Create web directory and S3 sync configuration
 echo "Setting up web directory and S3 sync configuration..."
-mkdir -p /var/www/hitl
+mkdir -p /var/www/html
 mkdir -p /etc/hitl
-chown nginx:nginx /var/www/hitl
+chown nginx:nginx /var/www/html
 
 # Download helper scripts from S3
 echo "Downloading helper scripts from S3..."
@@ -195,7 +195,7 @@ echo "EC2 instance configuration completed successfully!"
 echo "Services status:"
 systemctl status nginx --no-pager -l || true
 echo "S3 sync status:"
-ls -la /var/www/hitl/ || true
+ls -la /var/www/html/ || true
 
 # Signal completion to CloudFormation/Auto Scaling (if needed)
 # This would be used with CloudFormation CreationPolicy or ASG lifecycle hooks

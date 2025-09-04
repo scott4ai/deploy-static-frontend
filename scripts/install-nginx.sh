@@ -19,9 +19,11 @@ cp -r lua-resty-http-0.17.1/lib/resty/http* /usr/local/openresty/lualib/resty/
 rm -rf /tmp/lua-resty-http-0.17.1 /tmp/v0.17.1.tar.gz
 
 echo "Creating directory structure..."
-mkdir -p /var/www/hitl
-echo '<h1>HITL Platform Ready</h1>' > /var/www/hitl/index.html
-chown -R nobody:nobody /var/www/hitl
+WEB_DIR="/var/www/html"
+mkdir -p "$WEB_DIR"
+echo '<h1>HITL Platform Ready</h1>' > "$WEB_DIR/index.html"
+# OpenResty runs as nobody user by default
+chown -R nobody:nobody "$WEB_DIR"
 
 echo "Configuring OpenResty..."
 mkdir -p /usr/local/openresty/nginx/conf/conf.d
@@ -30,7 +32,7 @@ server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
-    root /var/www/hitl;
+    root /var/www/html;
     index index.html;
 
     # Health check endpoint served directly by nginx
@@ -43,7 +45,7 @@ server {
     # Detailed health endpoint with instance metadata
     location = /health-detailed {
         access_log off;
-        alias /var/www/hitl/health-detailed;
+        alias /var/www/html/health-detailed;
         add_header Content-Type application/json;
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
@@ -93,6 +95,19 @@ server {
 EOF
 
 # Update main nginx.conf to include our conf.d files
-sed -i '/http {/a\    include /usr/local/openresty/nginx/conf/conf.d/*.conf;' /usr/local/openresty/nginx/conf/nginx.conf
+echo "Adding conf.d include to main nginx.conf..."
+if grep -q "conf.d" /usr/local/openresty/nginx/conf/nginx.conf; then
+    echo "conf.d include already exists in nginx.conf"
+else
+    sed -i '/http {/a\    include /usr/local/openresty/nginx/conf/conf.d/*.conf;' /usr/local/openresty/nginx/conf/nginx.conf
+    if grep -q "conf.d" /usr/local/openresty/nginx/conf/nginx.conf; then
+        echo "Successfully added conf.d include to nginx.conf"
+    else
+        echo "Failed to add conf.d include to nginx.conf"
+        # Fallback approach - append to end of http block
+        sed -i '/http {/,/^}/ { /^}/i\    include /usr/local/openresty/nginx/conf/conf.d/*.conf;
+}' /usr/local/openresty/nginx/conf/nginx.conf
+    fi
+fi
 
 echo "OpenResty installation and configuration complete!"

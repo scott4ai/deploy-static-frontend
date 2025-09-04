@@ -1,6 +1,6 @@
 # Upload helper scripts to S3 for EC2 instances to download
 
-# Upload React app build files to S3 bucket created by Image Builder
+# Upload React app build files to S3 bucket created by AMI stack
 resource "aws_s3_object" "react_app" {
   for_each = fileset("${path.module}/../../demo-app/build", "**/*")
   
@@ -25,4 +25,4 @@ resource "aws_s3_object" "react_app" {
   tags = local.common_tags
 }
 
-# Note: sync-from-s3.sh and health-check.sh scripts are now uploaded by Image Builder stack
+# Note: sync-from-s3.sh and health-check.sh scripts are now uploaded by AMI stack

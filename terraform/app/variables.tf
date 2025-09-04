@@ -13,7 +13,7 @@ variable "environment" {
 variable "project_name" {
   description = "Project name for resource naming"
   type        = string
-  default     = "hitl"
+  default     = "hitl-tf"
 }
 
 # VPC Configuration - now sourced from VPC remote state in main.tf locals
