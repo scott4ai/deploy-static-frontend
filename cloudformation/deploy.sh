@@ -496,27 +496,13 @@ upload_frontend_assets() {
         --region "$AWS_REGION" \
         --delete \
         --cache-control "public, max-age=31536000" \
-        --exclude "index.html" \
-        --exclude "service-worker.js" \
-        --exclude "manifest.json"
+        --exclude "index.html"
     
-    # Upload index.html and other files without cache
+    # Upload index.html without cache
     aws s3 cp build/index.html "s3://$bucket_name/build/" \
         --region "$AWS_REGION" \
         --cache-control "no-cache, no-store, must-revalidate" \
         --content-type "text/html"
-    
-    if [ -f "build/service-worker.js" ]; then
-        aws s3 cp build/service-worker.js "s3://$bucket_name/build/" \
-            --region "$AWS_REGION" \
-            --cache-control "no-cache, no-store, must-revalidate"
-    fi
-    
-    if [ -f "build/manifest.json" ]; then
-        aws s3 cp build/manifest.json "s3://$bucket_name/build/" \
-            --region "$AWS_REGION" \
-            --cache-control "no-cache, no-store, must-revalidate"
-    fi
     
     cd "$SCRIPT_DIR"
     log "✅ Frontend assets uploaded successfully"

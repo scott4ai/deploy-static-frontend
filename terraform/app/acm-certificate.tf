@@ -70,6 +70,24 @@ resource "aws_lb_listener" "https" {
   ]
 }
 
+# HTTPS Listener Rule for API (conditional)
+resource "aws_lb_listener_rule" "https_api" {
+  count        = var.domain_name != "" ? 1 : 0
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.lambda.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
+  }
+}
+
 # Update HTTP listener to redirect to HTTPS
 resource "aws_lb_listener_rule" "http_redirect" {
   count        = var.domain_name != "" ? 1 : 0
@@ -89,6 +107,21 @@ resource "aws_lb_listener_rule" "http_redirect" {
     host_header {
       values = [var.domain_name]
     }
+  }
+}
+
+# Route53 alias record pointing to ALB (conditional)
+resource "aws_route53_record" "main" {
+  count = local.create_route53_records ? 1 : 0
+  
+  zone_id = var.route53_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
   }
 }
 

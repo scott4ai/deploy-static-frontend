@@ -51,9 +51,9 @@ variable "custom_ami_id" {
 
 # Application Configuration
 variable "domain_name" {
-  description = "Domain name for SSL certificate (optional)"
+  description = "Domain name for SSL certificate (leave empty to skip HTTPS)"
   type        = string
-  default     = ""
+  default     = "hitl-tf.emg1.com"
 }
 
 variable "ssl_certificate_arn" {
@@ -63,15 +63,15 @@ variable "ssl_certificate_arn" {
 }
 
 variable "create_route53_records" {
-  description = "Create Route 53 DNS records for ACM certificate validation"
+  description = "Whether to create Route53 records"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "route53_zone_id" {
   description = "Route 53 hosted zone ID for the domain"
   type        = string
-  default     = ""
+  default     = "Z06144693848E68QIDQLM"
 }
 
 # Lambda Configuration
@@ -120,17 +120,17 @@ variable "cognito_user_pool_client_id" {
 
 # WAF Configuration
 variable "enable_waf" {
-  description = "Enable AWS WAF"
+  description = "Whether to enable WAF protection"
   type        = bool
   default     = true
 }
 
-
 variable "waf_rate_limit" {
-  description = "WAF rate limit per 5 minutes"
+  description = "WAF rate limit per 5-minute period"
   type        = number
   default     = 2000
 }
+
 
 # Monitoring Configuration
 variable "enable_detailed_monitoring" {

@@ -30,7 +30,8 @@ resource "aws_iam_role_policy" "ec2_policy" {
         Effect = "Allow"
         Action = [
           "s3:GetObject",
-          "s3:ListBucket"
+          "s3:ListBucket",
+          "s3:DeleteObject"
         ]
         Resource = [
           data.aws_s3_bucket.frontend_assets.arn,

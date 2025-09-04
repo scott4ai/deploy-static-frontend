@@ -114,9 +114,7 @@ resource "aws_iam_instance_profile" "ami" {
 # Component for nginx and security hardening
 resource "aws_imagebuilder_component" "nginx_security" {
   depends_on = [
-    aws_s3_object.install_nginx_script,
-    aws_s3_object.sync_from_s3_script,
-    aws_s3_object.generate_health_script
+    null_resource.upload_scripts
   ]
   
   name        = "${local.project_name}-${local.environment}-nginx-security"
@@ -273,33 +271,25 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "frontend_assets" 
   }
 }
 
-# Upload scripts to S3 for AMI build to use
-resource "aws_s3_object" "install_nginx_script" {
-  bucket = aws_s3_bucket.frontend_assets.bucket
-  key    = "scripts/install-nginx.sh"
-  source = "../../scripts/install-nginx.sh"
-  etag   = filemd5("../../scripts/install-nginx.sh")
-
-  tags = local.common_tags
+# Upload all scripts to S3 using sync (like CloudFormation does)
+resource "null_resource" "upload_scripts" {
+  provisioner "local-exec" {
+    command = <<-EOF
+      aws s3 sync "${path.root}/../../scripts/" "s3://${aws_s3_bucket.frontend_assets.bucket}/scripts/" \
+        --region ${local.aws_region} \
+        --exclude "*" \
+        --include "*.sh"
+    EOF
+  }
+  
+  # Re-upload if any script changes
+  triggers = {
+    scripts_hash = md5(join("", [for f in fileset("${path.root}/../../scripts", "*.sh") : filemd5("${path.root}/../../scripts/${f}")]))
+  }
+  
+  depends_on = [aws_s3_bucket.frontend_assets]
 }
 
-resource "aws_s3_object" "sync_from_s3_script" {
-  bucket = aws_s3_bucket.frontend_assets.bucket
-  key    = "scripts/sync-from-s3.sh"
-  source = "../../scripts/sync-from-s3.sh"
-  etag   = filemd5("../../scripts/sync-from-s3.sh")
-
-  tags = local.common_tags
-}
-
-resource "aws_s3_object" "generate_health_script" {
-  bucket = aws_s3_bucket.frontend_assets.bucket
-  key    = "scripts/generate-health.sh"
-  source = "../../scripts/generate-health.sh"
-  etag   = filemd5("../../scripts/generate-health.sh")
-
-  tags = local.common_tags
-}
 
 # S3 bucket for AMI build logs
 resource "aws_s3_bucket" "ami_logs" {
@@ -402,7 +392,8 @@ resource "null_resource" "trigger_ami_build" {
     aws_imagebuilder_image_pipeline.main,
     aws_imagebuilder_infrastructure_configuration.main,
     aws_imagebuilder_image_recipe.main,
-    aws_imagebuilder_distribution_configuration.main
+    aws_imagebuilder_distribution_configuration.main,
+    null_resource.upload_scripts
   ]
   
   provisioner "local-exec" {
@@ -423,6 +414,7 @@ resource "null_resource" "trigger_ami_build" {
           AMI_ID=$(aws ec2 describe-images --owners self --filters "Name=name,Values=${local.project_name}-${local.environment}-nginx-*" --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' --output text)
           echo "Built AMI ID: $AMI_ID"
           echo "$AMI_ID" > /tmp/terraform_built_ami_id
+          
           break
         elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
           echo "AMI build failed with status: $STATUS"
@@ -465,8 +457,6 @@ resource "null_resource" "trigger_ami_build" {
     recipe_arn       = aws_imagebuilder_image_recipe.main.arn
     component_arn    = aws_imagebuilder_component.nginx_security.arn
     infra_config     = aws_imagebuilder_infrastructure_configuration.main.arn
-    install_script   = aws_s3_object.install_nginx_script.etag
-    sync_script      = aws_s3_object.sync_from_s3_script.etag
-    health_script    = aws_s3_object.generate_health_script.etag
+    scripts_hash     = null_resource.upload_scripts.triggers.scripts_hash
   }
 }

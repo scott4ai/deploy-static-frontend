@@ -1,6 +1,6 @@
 # Launch Template for EC2 instances
 resource "aws_launch_template" "web" {
-  name_prefix   = "${local.project_name}-${local.environment}-web-"
+  name          = "${local.project_name}-${local.environment}-web-template"
   image_id      = local.use_custom_ami ? local.ami_id : data.aws_ami.amazon_linux[0].id
   instance_type = var.instance_type
 
@@ -71,11 +71,12 @@ resource "aws_autoscaling_group" "web" {
     version = "$Latest"
   }
 
-  # Instance refresh for rolling updates
+  # Instance refresh - terminate all instances immediately on every deploy
   instance_refresh {
     strategy = "Rolling"
     preferences {
-      min_healthy_percentage = 50
+      min_healthy_percentage = 0  # Terminate all instances immediately
+      instance_warmup = 60        # Quick warmup time
     }
     triggers = ["tag"]
   }
@@ -92,6 +93,13 @@ resource "aws_autoscaling_group" "web" {
   tag {
     key                 = "Environment"
     value               = local.environment
+    propagate_at_launch = true
+  }
+
+  # Force instance refresh on every deploy for safety
+  tag {
+    key                 = "LastDeployed"
+    value               = timestamp()
     propagate_at_launch = true
   }
 

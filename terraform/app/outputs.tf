@@ -78,14 +78,35 @@ output "cloudwatch_dashboard_url" {
   value       = "https://${local.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${local.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.main.dashboard_name}"
 }
 
+# Application URLs
 output "application_url" {
-  description = "URL to access the application"
-  value       = var.domain_name != "" ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}"
+  description = "Application URL (HTTP)"
+  value       = "http://${aws_lb.main.dns_name}"
 }
 
-output "ssl_certificate_arn" {
+output "application_https_url" {
+  description = "Application URL (HTTPS) - only if domain configured"
+  value       = local.has_domain_name ? "https://${var.domain_name}" : null
+}
+
+output "load_balancer_dns_name" {
+  description = "DNS name of the load balancer"
+  value       = aws_lb.main.dns_name
+}
+
+output "domain_url" {
+  description = "The HTTPS URL of the application (if domain configured)"
+  value       = local.has_domain_name ? "https://${var.domain_name}" : null
+}
+
+output "certificate_arn" {
   description = "ARN of the SSL certificate"
-  value       = var.ssl_certificate_arn != "" ? var.ssl_certificate_arn : (var.domain_name != "" ? aws_acm_certificate.main[0].arn : null)
+  value       = local.has_domain_name ? aws_acm_certificate.main[0].arn : null
+}
+
+output "web_acl_arn" {
+  description = "ARN of the WAF Web ACL"
+  value       = local.enable_waf ? aws_wafv2_web_acl.main[0].arn : null
 }
 
 # Outputs for deployment scripts
