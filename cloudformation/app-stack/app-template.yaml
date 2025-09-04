@@ -700,7 +700,7 @@ Resources:
         - Field: path-pattern
           Values: ['/api/*']
 
-  # HTTP to HTTPS redirect rule (conditional)
+  # HTTP to HTTPS redirect rule (conditional) - redirects ALL HTTP traffic
   HTTPRedirectRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Condition: HasDomainName
@@ -714,8 +714,8 @@ Resources:
             Protocol: HTTPS
             StatusCode: HTTP_301
       Conditions:
-        - Field: host-header
-          Values: [!Ref DomainName]
+        - Field: path-pattern
+          Values: ['*']
 
   # Certificate expiration alarm (conditional)
   CertificateExpiryAlarm:
