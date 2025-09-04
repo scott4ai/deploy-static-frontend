@@ -1118,8 +1118,11 @@ This project demonstrates:
 
 ### Recent Updates (v2.0.0)
 - Full CloudFormation implementation alongside Terraform
+- Standardized deployment patterns between Terraform and CloudFormation
 - Automatic AMI build integration with `--build-ami` flag
 - Lambda API endpoints with proper ALB routing
-- Automatic instance refresh on application updates
+- Automatic instance refresh on every deployment for safety
+- HTTP to HTTPS redirect for all traffic when SSL certificates are configured
+- Optimized S3 sync operations with proper cache headers
 - Fixed OpenResty configuration and S3 sync permissions
 - Enhanced deployment script with comprehensive error handling
